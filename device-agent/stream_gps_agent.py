@@ -135,7 +135,7 @@ def tracking_loop():
             write_queue(remaining)
         except Exception as error:
             with LOCK: STATUS['gps_fix'] = False; STATUS['last_error'] = str(error)
-        time.sleep(max(2, min(300, int(load_config().get('interval_seconds', 2)))))
+        time.sleep(max(0.5, min(10, float(load_config().get('interval_seconds', 2)))))
 
 def verify_password(config, password):
     try:
@@ -163,7 +163,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK: payload = dict(STATUS)
             self.respond(200, json.dumps(payload), 'application/json'); return
         config = load_config(); status = dict(STATUS)
-        page = f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS Device</title><style>body{{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:760px;margin:30px auto;padding:16px}}section{{background:#121b2b;border:1px solid #28364b;border-radius:12px;padding:20px;margin:16px 0}}input{{width:100%;box-sizing:border-box;padding:10px;margin:5px 0 14px;background:#0f1726;color:white;border:1px solid #44536a;border-radius:7px}}button{{padding:10px 15px;background:#1f6feb;color:white;border:0;border-radius:7px}}.ok{{color:#35d39a}}.bad{{color:#f97066}}code{{overflow-wrap:anywhere}}</style></head><body><h1>Stream GPS Device</h1><p>Standalone agent — BelaUI is not modified.</p><section><h2>Status</h2><p>Modem: <b>{html.escape(str(status['modem'] or 'not detected'))}</b></p><p>GPS fix: <b class="{'ok' if status['gps_fix'] else 'bad'}">{'yes' if status['gps_fix'] else 'no'}</b></p><p>Queued points: <b>{status['queue_size']}</b></p><p>Last error: <code>{html.escape(str(status['last_error'] or 'none'))}</code></p></section><section><h2>Configuration</h2><form method="post" action="/save"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" value="{html.escape(config['api_url'])}" required><label>Device ID</label><input name="device_id" value="{html.escape(config['device_id'])}" required><label>New device key (leave empty to keep current)</label><input name="device_key" type="password"><label>Upload interval in seconds (2–300)</label><input name="interval_seconds" type="number" min="2" max="300" value="{int(config.get('interval_seconds',2))}"><label>Modem ID (`auto` recommended)</label><input name="modem_id" value="{html.escape(str(config.get('modem_id','auto')))}"><button>Save configuration</button></form></section></body></html>'''
+        page = f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS Device</title><style>body{{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:760px;margin:30px auto;padding:16px}}section{{background:#121b2b;border:1px solid #28364b;border-radius:12px;padding:20px;margin:16px 0}}input{{width:100%;box-sizing:border-box;padding:10px;margin:5px 0 14px;background:#0f1726;color:white;border:1px solid #44536a;border-radius:7px}}button{{padding:10px 15px;background:#1f6feb;color:white;border:0;border-radius:7px}}.ok{{color:#35d39a}}.bad{{color:#f97066}}code{{overflow-wrap:anywhere}}</style></head><body><h1>Stream GPS Device</h1><section><h2>Status</h2><p>Modem: <b>{html.escape(str(status['modem'] or 'not detected'))}</b></p><p>GPS fix: <b class="{'ok' if status['gps_fix'] else 'bad'}">{'yes' if status['gps_fix'] else 'no'}</b></p><p>Queued points: <b>{status['queue_size']}</b></p><p>Last error: <code>{html.escape(str(status['last_error'] or 'none'))}</code></p></section><section><h2>Configuration</h2><form method="post" action="/save"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" value="{html.escape(config['api_url'])}" required><label>Device ID</label><input name="device_id" value="{html.escape(config['device_id'])}" required><label>New device key (leave empty to keep current)</label><input name="device_key" type="password"><label>Update interval in seconds (0.5–10)</label><input name="interval_seconds" type="number" min="0.5" max="10" step="0.5" value="{float(config.get('interval_seconds',2)):g}"><label>Modem ID (`auto` recommended)</label><input name="modem_id" value="{html.escape(str(config.get('modem_id','auto')))}"><button>Save configuration</button></form></section></body></html>'''
         self.respond(200, page)
     def do_POST(self):
         if not self.require_auth(): return
@@ -171,8 +171,8 @@ class Handler(BaseHTTPRequestHandler):
         from urllib.parse import parse_qs
         length = min(int(self.headers.get('Content-Length', '0')), 20000); form = parse_qs(self.rfile.read(length).decode())
         if form.get('csrf', [''])[0] != self.csrf: self.respond(403, 'Invalid form token'); return
-        config = load_config(); interval = int(form.get('interval_seconds', ['2'])[0]); api_url = form.get('api_url', [''])[0].rstrip('/')
-        if not 2 <= interval <= 300: self.respond(400, 'Interval must be between 2 and 300 seconds'); return
+        config = load_config(); interval = float(form.get('interval_seconds', ['2'])[0]); api_url = form.get('api_url', [''])[0].rstrip('/')
+        if not 0.5 <= interval <= 10: self.respond(400, 'Interval must be between 0.5 and 10 seconds'); return
         if not api_url.startswith(('http://', 'https://')): self.respond(400, 'Platform URL must begin with http:// or https://'); return
         config.update(api_url=api_url, device_id=form.get('device_id', [''])[0], interval_seconds=interval, modem_id=form.get('modem_id', ['auto'])[0])
         if form.get('device_key', [''])[0]: config['device_key'] = form['device_key'][0]

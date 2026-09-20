@@ -212,7 +212,7 @@ paths:
       security:
         - deviceToken: []
       summary: Submit a GPS position
-      description: Limited to 90 requests per device per minute. Timestamp tolerance is five minutes and every nonce can be used only once.
+      description: Limited to 180 requests per device per minute. Timestamp tolerance is five minutes and every nonce can be used only once.
       parameters:
         - { in: header, name: X-Device-Id, required: true, schema: { type: string } }
         - { in: header, name: X-Request-Timestamp, required: true, schema: { type: integer, description: Unix seconds } }

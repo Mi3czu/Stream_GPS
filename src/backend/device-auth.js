@@ -3,7 +3,7 @@ const { pool } = require('./database/postgres');
 
 const REQUEST_WINDOW_SECONDS = 300;
 const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX_REQUESTS = 90;
+const RATE_LIMIT_MAX_REQUESTS = 180;
 const requestCounters = new Map();
 
 function sendError(res, status, error, message) {

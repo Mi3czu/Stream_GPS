@@ -103,7 +103,7 @@ Przeglądarka poprosi o dane Basic Auth:
 - użytkownik: `admin`;
 - hasło: hasło panelu podane podczas instalacji.
 
-Panel pokazuje modem, stan fixa GPS, rozmiar kolejki i ostatni błąd. Pozwala zmienić adres serwera, `DEVICE_ID`, klucz, numer modemu oraz interwał 2–300 sekund. Istniejący klucz nigdy nie jest wyświetlany.
+Panel pokazuje modem, stan fixa GPS, rozmiar kolejki i ostatni błąd. Pozwala zmienić adres serwera, `DEVICE_ID`, klucz, numer modemu oraz interwał 0,5–10 sekund. Domyślnie używane są 2 sekundy. Ustawienie 0,5 sekundy nie zagwarantuje nowej pozycji dwa razy na sekundę — rzeczywista częstotliwość zależy od modemu, fixa GNSS i czasu odpowiedzi `mmcli`. Istniejący klucz nigdy nie jest wyświetlany.
 
 Agent odczytuje pola surowej lokalizacji ModemManagera i zdania NMEA RMC/GGA. Dzięki temu potrafi uzyskać prędkość w km/h, kierunek, wysokość oraz liczbę satelitów także wtedy, gdy modem nie wystawia ich jako osobnych pól `mmcli`.
 
@@ -201,5 +201,5 @@ Ponownie pobierz aktualny instalator, obejrzyj zmiany i uruchom go. Przed podmia
 - **Waiting for GPS fix** — sprawdź antenę GNSS, wyjdź na otwartą przestrzeń i poczekaj na cold start.
 - **HTTP 401** — `DEVICE_ID` lub `DEVICE_KEY` są niepoprawne albo urządzenie zostało wyłączone. Wygeneruj nowy klucz na stronie Devices i wpisz go w panelu `:26666`.
 - **HTTP 409** — żądanie zostało rozpoznane jako powtórzone; klient sam wygeneruje nowy nonce przy następnej próbie.
-- **HTTP 429** — wysyłanie jest zbyt częste. Ustaw interwał co najmniej 2 sekundy.
+- **HTTP 429** — wysyłanie jest zbyt częste. Zwiększ interwał w panelu urządzenia.
 - **Panel się nie otwiera** — sprawdź `sudo ss -ltnp | grep ':26666'`, zaporę sieciową i czy komputer jest w tej samej sieci.
