@@ -196,7 +196,7 @@ To ostatnie polecenie bezpowrotnie usuwa zapisany klucz i niewysłane punkty.
 Od wersji `1.2.0` aktualizacje klienta są dostępne bezpośrednio w lokalnym panelu na porcie `26666`:
 
 1. Otwórz panel i zaloguj się.
-2. W sekcji **Software update** wybierz **Check for updates**.
+2. W znajdującej się na dole panelu sekcji **System** wybierz **Check for updates**.
 3. Jeżeli pojawi się nowsza wersja, wybierz **Install update**.
 4. Poczekaj około 15 sekund i odśwież stronę. W sekcji statusu powinna być widoczna nowa wersja.
 
@@ -208,7 +208,7 @@ Informacje o przebiegu lub błędzie aktualizacji można sprawdzić poleceniem:
 sudo journalctl -u 'stream-gps-device-update-*' -n 100 --no-pager
 ```
 
-Pierwsze przejście ze starszej wersji, która nie ma sekcji **Software update**, wykonaj jednorazowo tak:
+Pierwsze przejście ze starszej wersji, która nie ma sekcji **System**, wykonaj jednorazowo tak:
 
 ```sh
 curl -fL https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/installer/install-device.sh -o /tmp/install-stream-gps-device.sh
