@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/opt/stream-gps-device/stream_gps_agent.py run
+ExecStart=/usr/bin/python3 /opt/stream-gps-device/stream_gps_agent.py run
 Restart=on-failure
 RestartSec=5
 User=root

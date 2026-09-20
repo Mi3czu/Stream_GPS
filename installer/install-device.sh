@@ -81,6 +81,7 @@ copy_or_download stream-gps-device.service "$INSTALL_DIR/stream-gps-device.servi
 copy_or_download VERSION "$INSTALL_DIR/VERSION"
 copy_or_download checksums.sha256 "$INSTALL_DIR/checksums.sha256"
 (cd "$INSTALL_DIR" && sha256sum -c checksums.sha256)
+chmod 755 "$INSTALL_DIR/stream_gps_agent.py" "$INSTALL_DIR/stream-gps-device"
 install -m 644 "$INSTALL_DIR/stream-gps-device.service" "$SERVICE_FILE"
 install -m 755 "$INSTALL_DIR/stream_gps_agent.py" /usr/local/bin/stream-gps-agent
 install -m 755 "$INSTALL_DIR/stream-gps-device" /usr/local/bin/stream-gps-device
