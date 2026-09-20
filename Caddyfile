@@ -1,0 +1,23 @@
+{$APP_DOMAIN} {
+  encode zstd gzip
+  root * /usr/share/caddy
+
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+    Permissions-Policy "camera=(), geolocation=(), microphone=()"
+  }
+
+  handle /api/* {
+    reverse_proxy backend:3000
+  }
+
+  handle /health {
+    reverse_proxy backend:3000
+  }
+
+  handle {
+    try_files {path} /index.html
+    file_server
+  }
+}

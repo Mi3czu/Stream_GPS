@@ -1,13 +1,17 @@
 .gps-map {
-  min-height: 360px;
+  min-height: var(--gps-map-size, 360px);
   position: relative;
 }
 
 .gps-map .leaflet-container {
   border: 1px solid #cbd5e1;
   border-radius: 8px;
-  height: 360px;
+  height: var(--gps-map-size, 360px);
   width: 100%;
+}
+
+.gps-map__leaflet--dark .leaflet-tile-pane {
+  filter: brightness(0.62) contrast(1.15) grayscale(0.35) invert(1) hue-rotate(180deg) saturate(0.65);
 }
 
 .gps-map__empty {

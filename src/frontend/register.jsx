@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
+import ThemeToggle from './theme-toggle.jsx';
 
 const Register = () => {
   const [username, setUsername] = useState('');
@@ -30,8 +32,11 @@ const Register = () => {
   };
 
   return (
-    <div>
-      <h1>Register</h1>
+    <div className="auth-page">
+      <ThemeToggle compact />
+      <div className="auth-card">
+      <h1>Create your Stream GPS account</h1>
+      <p>Your devices, GPS history, keys and overlays will be private to this account.</p>
 
       <form onSubmit={handleSubmit}>
         <input
@@ -55,6 +60,7 @@ const Register = () => {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           placeholder="Password"
+          minLength={12}
           required
         />
 
@@ -63,6 +69,8 @@ const Register = () => {
 
       {error && <p style={{ color: 'red' }}>{error}</p>}
       {success && <p style={{ color: 'green' }}>{success}</p>}
+      <p>Already have an account? <Link to="/login">Log in</Link></p>
+      </div>
     </div>
   );
 };

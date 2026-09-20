@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE admins (
+CREATE TABLE IF NOT EXISTS admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT NOT NULL UNIQUE,
   email TEXT NOT NULL UNIQUE,
@@ -11,7 +11,7 @@ CREATE TABLE admins (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE devices (
+CREATE TABLE IF NOT EXISTS devices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   device_id TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE devices (
   last_recorded_at TIMESTAMPTZ
 );
 
-CREATE TABLE gps_positions (
+CREATE TABLE IF NOT EXISTS gps_positions (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
   latitude DOUBLE PRECISION NOT NULL CHECK (latitude BETWEEN -90 AND 90),
@@ -44,15 +44,15 @@ CREATE TABLE gps_positions (
   received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX gps_positions_device_recorded_at_idx
+CREATE INDEX IF NOT EXISTS gps_positions_device_recorded_at_idx
   ON gps_positions (device_id, recorded_at DESC);
 
-CREATE TABLE request_nonces (
+CREATE TABLE IF NOT EXISTS request_nonces (
   nonce UUID PRIMARY KEY,
   device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
   expires_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX request_nonces_expires_at_idx ON request_nonces (expires_at);
+CREATE INDEX IF NOT EXISTS request_nonces_expires_at_idx ON request_nonces (expires_at);
 
 COMMIT;

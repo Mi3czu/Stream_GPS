@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: stream_gps
       POSTGRES_USER: stream_gps
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stream_gps_local_only}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -29,7 +29,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_DB: stream_gps
       POSTGRES_USER: stream_gps
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stream_gps_local_only}
       MIGRATIONS_DIR: /app/migrations
     depends_on:
       postgres:
@@ -44,15 +44,15 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_DB: stream_gps
       POSTGRES_USER: stream_gps
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stream_gps_local_only}
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-do-not-use-in-production}
       PORT: 3000
     depends_on:
       migrate:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
-      interval: 15s
+      interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
@@ -63,18 +63,17 @@ services:
       dockerfile: src/frontend/Dockerfile
     restart: unless-stopped
     environment:
-      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in the root .env file}
+      APP_DOMAIN: http://localhost:8080
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:8080"
     volumes:
-      - caddy_data:/data
-      - caddy_config:/config
+      - caddy_local_data:/data
+      - caddy_local_config:/config
     depends_on:
       backend:
         condition: service_healthy
 
 volumes:
   postgres_data:
-  caddy_data:
-  caddy_config:
+  caddy_local_data:
+  caddy_local_config:

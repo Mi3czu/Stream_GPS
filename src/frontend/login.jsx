@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import ThemeToggle from './theme-toggle.jsx';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -36,7 +38,9 @@ const Login = () => {
   };
 
   return (
-    <div>
+    <div className="auth-page">
+      <ThemeToggle compact />
+      <div className="auth-card">
       <h1>Login</h1>
 
       <form onSubmit={handleSubmit}>
@@ -61,6 +65,8 @@ const Login = () => {
 
       {error && <p style={{ color: 'red' }}>{error}</p>}
       {success && <p style={{ color: 'green' }}>{success}</p>}
+      <p>New to Stream GPS? <Link to="/register">Create an account</Link></p>
+      </div>
     </div>
   );
 };
