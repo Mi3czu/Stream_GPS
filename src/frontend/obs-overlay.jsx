@@ -95,7 +95,7 @@ const ObsOverlay = () => {
     <main className={`obs-overlay obs-overlay--${config.textTheme}`} style={{ '--overlay-text-color': config.textColor, '--overlay-font': config.fontFamily }}>
       {config.statsPosition === 'above-map' && statsPanel}
       <div className={`obs-overlay__map obs-overlay__map--${config.mapShape}`} style={{ '--overlay-size': `${config.mapSize}px`, '--overlay-border': config.borderColor }}>
-        <GpsMap positions={position} mapTheme={config.mapTheme} size={config.mapSize} zoomConfig={config} />
+        <GpsMap positions={position} mapTheme={config.mapTheme} size={config.mapSize} zoomConfig={config} zoomControl={false} />
       </div>
       <section className="obs-overlay__info">
         <strong>{device.name}</strong>

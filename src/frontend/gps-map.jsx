@@ -53,7 +53,7 @@ const MAP_TILES = {
   }
 };
 
-const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true }) => {
+const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, zoomControl = true }) => {
   const validPositions = positions.filter((position) => (
     Number.isFinite(Number(position.latitude)) && Number.isFinite(Number(position.longitude))
   ));
@@ -67,6 +67,7 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
         center={points[0] || DEFAULT_CENTER}
         className={mapTheme === 'night' || mapTheme === 'dark' ? 'gps-map__leaflet--dark' : ''}
         zoom={points.length ? 14 : 6}
+        zoomControl={zoomControl}
         scrollWheelZoom
       >
         <TileLayer

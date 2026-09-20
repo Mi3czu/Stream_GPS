@@ -132,6 +132,7 @@ const OverlaySettings = () => {
             mapTheme={config.mapTheme}
             size={240}
             zoomConfig={config}
+            zoomControl={false}
           />
         </div>
       </section>

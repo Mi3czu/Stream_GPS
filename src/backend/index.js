@@ -944,7 +944,7 @@ app.post('/api/v1/devices/:deviceId/overlays', authenticate, async (req, res) =>
       overlay,
       access_key: accessKey,
       overlay_path: `/overlay/${overlay.id}?key=${encodeURIComponent(accessKey)}`,
-      warning: 'Save this overlay URL now. The access key is shown only once.'
+      warning: 'The complete OBS URL can also be retrieved later by the device owner.'
     });
   } catch (error) {
     console.error('Create overlay error:', error.message);
