@@ -27,7 +27,7 @@ const AuditLog = () => {
 
   return (
     <main>
-      <p><Link to="/dashboard">Back to dashboard</Link></p>
+      <Link className="back-link" to="/dashboard"><span aria-hidden="true">←</span> Back to dashboard</Link>
       <h1>Security audit log</h1>
       {error && <p style={{ color: 'red' }}>{error}</p>}
       <table>

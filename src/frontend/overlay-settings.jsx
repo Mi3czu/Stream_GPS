@@ -79,7 +79,7 @@ const OverlaySettings = () => {
 
   return (
     <main className="overlay-settings">
-      <p><Link to={`/devices/${encodeURIComponent(deviceId)}`}>Back to device</Link></p>
+      <Link className="back-link" to={`/devices/${encodeURIComponent(deviceId)}`}><span aria-hidden="true">←</span> Back to device</Link>
       <h1>Overlay settings</h1>
       <p>{overlay.name}</p>
       {error && <p className="overlay-settings__error">{error}</p>}

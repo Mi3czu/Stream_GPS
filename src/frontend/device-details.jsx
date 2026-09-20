@@ -157,7 +157,7 @@ const DeviceDetails = () => {
   if (loading && !device) return <main><p>Loading device...</p></main>;
   const publicMapUrl = device?.public_share_id ? `${window.location.origin}/map/${device.public_share_id}` : null;
   return <main>
-    <header className="page-header"><div><p><Link to="/devices">← Back to devices</Link></p><h1>{device?.name || deviceId}</h1><p><code>{deviceId}</code></p></div><span className={`status-pill ${liveStatus === 'live' ? 'status-pill--online' : 'status-pill--offline'}`}>{liveStatus}</span></header>
+    <header className="page-header"><div><Link className="back-link" to="/devices"><span aria-hidden="true">←</span> Back to devices</Link><h1>{device?.name || deviceId}</h1><p><code>{deviceId}</code></p></div><span className={`status-pill ${liveStatus === 'live' ? 'status-pill--online' : 'status-pill--offline'}`}>{liveStatus}</span></header>
     {error && <div className="alert alert--error">{error}</div>}
     {device && <>
       <section className="stat-grid">
