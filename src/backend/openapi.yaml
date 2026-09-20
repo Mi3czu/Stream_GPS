@@ -225,6 +225,32 @@ paths:
       responses:
         '200': { description: Current shared position }
         '404': { description: Sharing is disabled or the link is invalid }
+  /api/v1/device/public-sharing:
+    get:
+      security:
+        - deviceToken: []
+      summary: Read public sharing state from the device agent
+      responses:
+        '200': { description: Current public sharing state }
+    patch:
+      security:
+        - deviceToken: []
+      summary: Enable or disable the public viewer map from the device agent
+      parameters:
+        - { in: header, name: X-Device-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-Request-Timestamp, required: true, schema: { type: integer } }
+        - { in: header, name: X-Request-Nonce, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200': { description: Updated public sharing state }
   /api/v1/devices/{deviceId}/rotate-key:
     parameters:
       - $ref: '#/components/parameters/DeviceId'

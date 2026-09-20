@@ -1068,6 +1068,58 @@ app.delete('/api/v1/devices/:deviceId', authenticate, async (req, res) => {
   }
 });
 
+app.get('/api/v1/device/public-sharing', authenticateDevice, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT public_share_id, public_share_enabled, public_share_updated_at
+       FROM devices WHERE id = $1`,
+      [req.device.id]
+    );
+    const sharing = result.rows[0];
+    res.set('Cache-Control', 'no-store');
+    res.json({ sharing, public_map_path: sharing.public_share_id ? `/map/${sharing.public_share_id}` : null });
+  } catch (error) {
+    console.error('Device public sharing read error:', error.message);
+    sendError(res, 500, 'PUBLIC_SHARING_READ_FAILED', 'Unable to read public location sharing');
+  }
+});
+
+app.patch('/api/v1/device/public-sharing', authenticateDevice, async (req, res) => {
+  if (typeof req.body.enabled !== 'boolean') {
+    return sendError(res, 400, 'PUBLIC_SHARING_INVALID', 'enabled must be true or false');
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM request_nonces WHERE expires_at <= NOW()');
+    await client.query(
+      `INSERT INTO request_nonces (nonce, device_id, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '5 minutes')`,
+      [req.requestNonce, req.device.id]
+    );
+    const result = await client.query(
+      `UPDATE devices
+       SET public_share_enabled = $1,
+           public_share_id = CASE WHEN $1 AND public_share_id IS NULL THEN gen_random_uuid() ELSE public_share_id END,
+           public_share_updated_at = NOW(), updated_at = NOW()
+       WHERE id = $2 AND status = 'active'
+       RETURNING device_id, public_share_id, public_share_enabled, public_share_updated_at`,
+      [req.body.enabled, req.device.id]
+    );
+    await client.query('COMMIT');
+    const sharing = result.rows[0];
+    await recordAudit(req, req.body.enabled ? 'public_sharing.device_enabled' : 'public_sharing.device_disabled', 'device', req.device.device_id);
+    res.json({ sharing, public_map_path: sharing.public_share_id ? `/map/${sharing.public_share_id}` : null });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (error.code === '23505') return sendError(res, 409, 'REQUEST_REPLAYED', 'This request nonce has already been used');
+    console.error('Device public sharing update error:', error.message);
+    sendError(res, 500, 'PUBLIC_SHARING_UPDATE_FAILED', 'Unable to update public location sharing');
+  } finally {
+    client.release();
+  }
+});
+
 app.post('/api/v1/gps/update', authenticateDevice, async (req, res) => {
   const validated = validateGpsPosition(req.body);
   if (validated.error) return sendError(res, 400, validated.error, validated.message);

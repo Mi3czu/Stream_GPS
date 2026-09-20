@@ -98,6 +98,8 @@ Na komputerze w tej samej sieci otwórz:
 http://ADRES_BELABOXA:26666
 ```
 
+Sekcja **Viewer privacy** pozwala w dowolnym momencie włączyć lub zatrzymać publiczne udostępnianie bieżącej pozycji dla widzów. Wyłączenie publicznej mapy nie zatrzymuje wysyłania GPS do prywatnego dashboardu. Tworzenie, kopiowanie i regenerowanie publicznego linku pozostaje dostępne wyłącznie w głównym panelu Stream GPS.
+
 Przeglądarka poprosi o dane Basic Auth:
 
 - użytkownik: `admin`;

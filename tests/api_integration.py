@@ -50,6 +50,15 @@ def main():
     share_id = sharing['public_share_id']
     public_device = request('GET', f'/api/v1/public-maps/{share_id}')['device']
     assert public_device['name'] == 'CI tracker' and float(public_device['latitude']) == 52.2297
+    def device_request(method, path, body=None, expected=200):
+        authenticated_headers = {'Authorization': 'Bearer ' + device_key, 'X-Device-Id': device_id,
+                                 'X-Request-Timestamp': str(int(time.time())), 'X-Request-Nonce': str(uuid.uuid4())}
+        return request(method, path, body, headers=authenticated_headers, expected=expected)
+    assert device_request('GET', '/api/v1/device/public-sharing')['sharing']['public_share_enabled'] is True
+    device_request('PATCH', '/api/v1/device/public-sharing', {'enabled': False})
+    request('GET', f'/api/v1/public-maps/{share_id}', expected=404)
+    device_request('PATCH', '/api/v1/device/public-sharing', {'enabled': True})
+    assert request('GET', f'/api/v1/public-maps/{share_id}')['device']['name'] == 'CI tracker'
     request('PATCH', f'/api/v1/devices/{device_id}/public-sharing', {'enabled': False}, owner)
     request('GET', f'/api/v1/public-maps/{share_id}', expected=404)
     request('PATCH', f'/api/v1/devices/{device_id}/public-sharing', {'enabled': True}, owner)

@@ -184,6 +184,16 @@ def upload(config, position):
     with urllib.request.urlopen(request, timeout=15) as response:
         if response.status not in (200, 201): raise RuntimeError('API returned HTTP ' + str(response.status))
 
+def device_api(config, method='GET', payload=None):
+    body = json.dumps(payload).encode() if payload is not None else None
+    request = urllib.request.Request(config['api_url'].rstrip('/') + '/api/v1/device/public-sharing', data=body, method=method, headers={
+        'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config['device_key'],
+        'X-Device-Id': config['device_id'], 'X-Request-Timestamp': str(int(time.time())),
+        'X-Request-Nonce': str(uuid.uuid4()), 'User-Agent': 'Stream-GPS-Device/1.0'
+    })
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.loads(response.read().decode('utf-8'))
+
 def tracking_loop():
     gps_enabled_for = None
     while True:
@@ -238,14 +248,28 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK: payload = dict(STATUS)
             self.respond(200, json.dumps(payload), 'application/json'); return
         config = load_config(); status = dict(STATUS); update = status.get('update_check'); installed = current_version()
+        try:
+            sharing = device_api(config).get('sharing') or {}; sharing_error = None
+        except Exception as error:
+            sharing = {}; sharing_error = str(error)
+        sharing_enabled = bool(sharing.get('public_share_enabled'))
+        sharing_text = '<b class="ok">enabled</b>' if sharing_enabled else '<b class="bad">disabled</b>'
+        if sharing_error: sharing_text = '<b class="bad">unavailable</b> <code>' + html.escape(sharing_error) + '</code>'
         update_text = '' if not update else (f"<p>Available version: <b>{html.escape(update['available'])}</b></p>" + (f'<form method="post" action="/install-update"><input type="hidden" name="csrf" value="{self.csrf}"><button>Install update</button></form>' if update['update_available'] else '<p class="ok">You are up to date.</p>'))
-        page = f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS Device</title><style>body{{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:760px;margin:30px auto;padding:16px}}section{{background:#121b2b;border:1px solid #28364b;border-radius:12px;padding:20px;margin:16px 0}}input{{width:100%;box-sizing:border-box;padding:10px;margin:5px 0 14px;background:#0f1726;color:white;border:1px solid #44536a;border-radius:7px}}button{{padding:10px 15px;background:#1f6feb;color:white;border:0;border-radius:7px;margin-right:8px}}.ok{{color:#35d39a}}.bad{{color:#f97066}}code{{overflow-wrap:anywhere}}</style></head><body><h1>Stream GPS Device</h1><section><h2>Status</h2><p>Modem: <b>{html.escape(str(status['modem'] or 'not detected'))}</b></p><p>GPS fix: <b class="{'ok' if status['gps_fix'] else 'bad'}">{'yes' if status['gps_fix'] else 'no'}</b></p><p>Queued points: <b>{status['queue_size']}</b></p><p>Last error: <code>{html.escape(str(status['last_error'] or 'none'))}</code></p></section><section><h2>Configuration</h2><form method="post" action="/save"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" value="{html.escape(config['api_url'])}" required><label>Device ID</label><input name="device_id" value="{html.escape(config['device_id'])}" required><label>New device key (leave empty to keep current)</label><input name="device_key" type="password"><label>Update interval in seconds (0.5–10)</label><input name="interval_seconds" type="number" min="0.5" max="10" step="0.5" value="{float(config.get('interval_seconds',2)):g}"><label>Modem ID (`auto` recommended)</label><input name="modem_id" value="{html.escape(str(config.get('modem_id','auto')))}"><button>Save configuration</button></form></section><section><h2>System</h2><p>Agent version: <b>{html.escape(installed)}</b></p><form method="post" action="/check-update"><input type="hidden" name="csrf" value="{self.csrf}"><button>Check for updates</button></form>{update_text}</section></body></html>'''
+        page = f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS Device</title><style>body{{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:760px;margin:30px auto;padding:16px}}section{{background:#121b2b;border:1px solid #28364b;border-radius:12px;padding:20px;margin:16px 0}}input{{width:100%;box-sizing:border-box;padding:10px;margin:5px 0 14px;background:#0f1726;color:white;border:1px solid #44536a;border-radius:7px}}button{{padding:10px 15px;background:#1f6feb;color:white;border:0;border-radius:7px;margin-right:8px}}.danger{{background:#b42318}}.ok{{color:#35d39a}}.bad{{color:#f97066}}code{{overflow-wrap:anywhere}}</style></head><body><h1>Stream GPS Device</h1><section><h2>Status</h2><p>Modem: <b>{html.escape(str(status['modem'] or 'not detected'))}</b></p><p>GPS fix: <b class="{'ok' if status['gps_fix'] else 'bad'}">{'yes' if status['gps_fix'] else 'no'}</b></p><p>Queued points: <b>{status['queue_size']}</b></p><p>Last error: <code>{html.escape(str(status['last_error'] or 'none'))}</code></p></section><section><h2>Viewer privacy</h2><p>Public location sharing: {sharing_text}</p>{'' if sharing_error else f'<form method="post" action="/toggle-public-sharing"><input type="hidden" name="csrf" value="{self.csrf}"><input type="hidden" name="enabled" value="{str(not sharing_enabled).lower()}"><button class="{"danger" if sharing_enabled else ""}">{"Stop sharing" if sharing_enabled else "Start sharing"}</button></form>'}<p>Only the current viewer map is affected. GPS uploads and the private dashboard continue working.</p></section><section><h2>Configuration</h2><form method="post" action="/save"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" value="{html.escape(config['api_url'])}" required><label>Device ID</label><input name="device_id" value="{html.escape(config['device_id'])}" required><label>New device key (leave empty to keep current)</label><input name="device_key" type="password"><label>Update interval in seconds (0.5–10)</label><input name="interval_seconds" type="number" min="0.5" max="10" step="0.5" value="{float(config.get('interval_seconds',2)):g}"><label>Modem ID (`auto` recommended)</label><input name="modem_id" value="{html.escape(str(config.get('modem_id','auto')))}"><button>Save configuration</button></form></section><section><h2>System</h2><p>Agent version: <b>{html.escape(installed)}</b></p><form method="post" action="/check-update"><input type="hidden" name="csrf" value="{self.csrf}"><button>Check for updates</button></form>{update_text}</section></body></html>'''
         self.respond(200, page)
     def do_POST(self):
         if not self.require_auth(): return
         from urllib.parse import parse_qs
         length = min(int(self.headers.get('Content-Length', '0')), 20000); form = parse_qs(self.rfile.read(length).decode())
         if form.get('csrf', [''])[0] != self.csrf: self.respond(403, 'Invalid form token'); return
+        if self.path == '/toggle-public-sharing':
+            try:
+                enabled = form.get('enabled', ['false'])[0] == 'true'
+                device_api(load_config(), 'PATCH', {'enabled': enabled})
+                self.send_response(303); self.send_header('Location', '/'); self.end_headers()
+            except Exception as error: self.respond(502, 'Unable to update public sharing: ' + html.escape(str(error)))
+            return
         if self.path == '/check-update':
             try:
                 with LOCK: STATUS['update_check'] = check_update()
