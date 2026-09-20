@@ -650,7 +650,8 @@ app.get('/api/v1/devices/:deviceId', authenticate, async (req, res) => {
     const result = await pool.query(
       `SELECT id, device_id, name, status, created_at, updated_at, last_seen_at,
               last_latitude, last_longitude, last_altitude, last_speed,
-              last_heading, last_accuracy, last_satellites, last_recorded_at
+              last_heading, last_accuracy, last_satellites, last_recorded_at,
+              public_share_id, public_share_enabled, public_share_updated_at
        FROM devices
        WHERE device_id = $1 AND owner_id = $2`,
       [req.params.deviceId, req.user.sub]
@@ -661,6 +662,69 @@ app.get('/api/v1/devices/:deviceId', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Get device error:', error.message);
     sendError(res, 500, 'DEVICE_READ_FAILED', 'Unable to load device');
+  }
+});
+
+app.patch('/api/v1/devices/:deviceId/public-sharing', authenticate, async (req, res) => {
+  try {
+    if (typeof req.body.enabled !== 'boolean') {
+      return sendError(res, 400, 'PUBLIC_SHARING_INVALID', 'enabled must be true or false');
+    }
+    const result = await pool.query(
+      `UPDATE devices
+       SET public_share_enabled = $1,
+           public_share_id = CASE WHEN $1 AND public_share_id IS NULL THEN gen_random_uuid() ELSE public_share_id END,
+           public_share_updated_at = NOW(), updated_at = NOW()
+       WHERE device_id = $2 AND owner_id = $3 AND status = 'active'
+       RETURNING device_id, public_share_id, public_share_enabled, public_share_updated_at`,
+      [req.body.enabled, req.params.deviceId, req.user.sub]
+    );
+    const sharing = result.rows[0];
+    if (!sharing) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Active device not found');
+    await recordAudit(req, req.body.enabled ? 'public_sharing.enabled' : 'public_sharing.disabled', 'device', req.params.deviceId);
+    res.json({ sharing, public_map_path: sharing.public_share_id ? `/map/${sharing.public_share_id}` : null });
+  } catch (error) {
+    console.error('Public sharing update error:', error.message);
+    sendError(res, 500, 'PUBLIC_SHARING_UPDATE_FAILED', 'Unable to update public location sharing');
+  }
+});
+
+app.post('/api/v1/devices/:deviceId/public-sharing/rotate', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE devices SET public_share_id = gen_random_uuid(), public_share_updated_at = NOW(), updated_at = NOW()
+       WHERE device_id = $1 AND owner_id = $2 AND status = 'active'
+       RETURNING device_id, public_share_id, public_share_enabled, public_share_updated_at`,
+      [req.params.deviceId, req.user.sub]
+    );
+    const sharing = result.rows[0];
+    if (!sharing) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Active device not found');
+    await recordAudit(req, 'public_sharing.link_regenerated', 'device', req.params.deviceId);
+    res.json({ sharing, public_map_path: `/map/${sharing.public_share_id}` });
+  } catch (error) {
+    console.error('Public sharing link regeneration error:', error.message);
+    sendError(res, 500, 'PUBLIC_SHARING_ROTATE_FAILED', 'Unable to regenerate public map link');
+  }
+});
+
+app.get('/api/v1/public-maps/:shareId', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT name, status, last_seen_at, last_latitude, last_longitude,
+              last_altitude, last_speed, last_heading, last_accuracy,
+              last_satellites, last_recorded_at
+       FROM devices
+       WHERE public_share_id = $1 AND public_share_enabled = TRUE AND status = 'active'`,
+      [req.params.shareId]
+    );
+    const device = result.rows[0];
+    if (!device) return sendError(res, 404, 'PUBLIC_MAP_UNAVAILABLE', 'Location sharing is unavailable');
+    res.set('Cache-Control', 'no-store');
+    res.json({ device: overlayDeviceData({ ...device, device_id: undefined }) });
+  } catch (error) {
+    if (error.code === '22P02') return sendError(res, 404, 'PUBLIC_MAP_UNAVAILABLE', 'Location sharing is unavailable');
+    console.error('Public map error:', error.message);
+    sendError(res, 500, 'PUBLIC_MAP_FAILED', 'Unable to load the public map');
   }
 });
 

@@ -9,6 +9,7 @@ Stream GPS receives GPS telemetry from registered devices, stores it in PostgreS
 - PostgreSQL storage for GPS history, nonce protection and telemetry sessions.
 - Live SSE device map, route statistics, history range, CSV/GPX export, deletion and configurable retention.
 - Standalone Belabox device agent with its own password-protected web panel on port 26666, offline queue and diagnostics; no BelaUI patching.
+- Optional public viewer map with a locally generated QR code, owner-controlled sharing switch and revocable link; GPS history stays private.
 - OBS Browser Source overlay with live SSE updates, speed-aware zoom, configurable map/text styling and GPS/session statistics.
 - Docker deployment with PostgreSQL, database migrations, Express API, React frontend and Caddy reverse proxy.
 

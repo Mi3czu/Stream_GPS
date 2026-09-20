@@ -193,6 +193,38 @@ paths:
       summary: Live Server-Sent Events stream
       responses:
         '200': { description: Events named ready and position, content: { text/event-stream: {} } }
+  /api/v1/devices/{deviceId}/public-sharing:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    patch:
+      summary: Enable or disable the public viewer map
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200': { description: Public sharing state and viewer path }
+  /api/v1/devices/{deviceId}/public-sharing/rotate:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      summary: Regenerate the public viewer link
+      responses:
+        '200': { description: Regenerated public viewer path }
+  /api/v1/public-maps/{shareId}:
+    get:
+      security: []
+      summary: Read the current publicly shared location
+      parameters:
+        - { in: path, name: shareId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Current shared position }
+        '404': { description: Sharing is disabled or the link is invalid }
   /api/v1/devices/{deviceId}/rotate-key:
     parameters:
       - $ref: '#/components/parameters/DeviceId'

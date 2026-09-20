@@ -10,6 +10,7 @@ import AuditLog from './audit-log.jsx';
 import AccountSettings from './account-settings.jsx';
 import AppShell from './app-shell.jsx';
 import ThemeToggle from './theme-toggle.jsx';
+import PublicMap from './public-map.jsx';
 
 function Home() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/overlay/:overlayId" element={<ObsOverlay />} />
+      <Route path="/map/:shareId" element={<PublicMap />} />
       <Route element={<AppShell />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/devices" element={<Devices />} />

@@ -45,6 +45,19 @@ def main():
     assert 'latitude,longitude' in csv and '52.2297' in csv
     assert request('POST', f'/api/v1/devices/{device_id}/live-token', token=owner)['expires_in'] == 300
     request('POST', f'/api/v1/devices/{device_id}/live-token', token=stranger, expected=404)
+    request('PATCH', f'/api/v1/devices/{device_id}/public-sharing', {'enabled': True}, stranger, expected=404)
+    sharing = request('PATCH', f'/api/v1/devices/{device_id}/public-sharing', {'enabled': True}, owner)['sharing']
+    share_id = sharing['public_share_id']
+    public_device = request('GET', f'/api/v1/public-maps/{share_id}')['device']
+    assert public_device['name'] == 'CI tracker' and float(public_device['latitude']) == 52.2297
+    request('PATCH', f'/api/v1/devices/{device_id}/public-sharing', {'enabled': False}, owner)
+    request('GET', f'/api/v1/public-maps/{share_id}', expected=404)
+    request('PATCH', f'/api/v1/devices/{device_id}/public-sharing', {'enabled': True}, owner)
+    assert request('GET', f'/api/v1/public-maps/{share_id}')['device']['name'] == 'CI tracker'
+    rotated = request('POST', f'/api/v1/devices/{device_id}/public-sharing/rotate', token=owner)['sharing']['public_share_id']
+    assert rotated != share_id
+    request('GET', f'/api/v1/public-maps/{share_id}', expected=404)
+    assert request('GET', f'/api/v1/public-maps/{rotated}')['device']['name'] == 'CI tracker'
     request('PATCH', '/api/me/privacy', {'retention_days': 30}, owner)
     deleted = request('DELETE', f'/api/v1/devices/{device_id}/history', token=owner)
     assert deleted['deleted_points'] == 1
