@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Standalone Stream GPS agent. It does not import or modify BelaUI."""
 
-import argparse, base64, hashlib, hmac, html, json, os, re, secrets, subprocess, threading, time, urllib.error, urllib.request, uuid
+import argparse, base64, hashlib, hmac, html, json, os, re, secrets, shutil, subprocess, tempfile, threading, time, urllib.error, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -9,6 +9,7 @@ CONFIG_PATH = Path('/etc/stream-gps-device/config.json')
 QUEUE_PATH = Path('/var/lib/stream-gps-device/queue.jsonl')
 STATUS = {'started_at': time.time(), 'modem': None, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0}
 LOCK = threading.Lock()
+DEFAULT_UPDATE_BASE = 'https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/device-agent'
 
 def load_config():
     with CONFIG_PATH.open(encoding='utf-8') as handle: return json.load(handle)
@@ -17,6 +18,80 @@ def save_config(config):
     temporary = CONFIG_PATH.with_suffix('.tmp')
     temporary.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     os.chmod(temporary, 0o600); temporary.replace(CONFIG_PATH)
+
+def current_version():
+    try: return (Path(__file__).resolve().parent / 'VERSION').read_text(encoding='utf-8').strip()
+    except OSError: return '0.0.0'
+
+def version_tuple(value):
+    match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)', str(value).strip())
+    if not match: raise ValueError('Invalid release version')
+    return tuple(int(part) for part in match.groups())
+
+def update_base(config=None):
+    base = (config or load_config()).get('update_base', DEFAULT_UPDATE_BASE).rstrip('/')
+    if not base.startswith('https://'): raise ValueError('Update URL must use HTTPS')
+    return base
+
+def download(url, timeout=20):
+    request = urllib.request.Request(url, headers={'User-Agent': 'Stream-GPS-Device-Updater/1.0'})
+    with urllib.request.urlopen(request, timeout=timeout) as response: return response.read()
+
+def check_update(config=None):
+    available = download(update_base(config) + '/VERSION').decode('utf-8').strip()
+    version_tuple(available)
+    installed = current_version()
+    return {'installed': installed, 'available': available, 'update_available': version_tuple(available) > version_tuple(installed)}
+
+def apply_update():
+    config = load_config(); base = update_base(config); release = check_update(config)
+    if not release['update_available']:
+        print('No update available'); return
+    names = ['stream_gps_agent.py', 'stream-gps-device', 'stream-gps-device.service', 'VERSION']
+    install_dir = Path('/opt/stream-gps-device'); backup = Path('/var/backups/stream-gps-device') / ('auto-update-' + time.strftime('%Y%m%d-%H%M%S'))
+    with tempfile.TemporaryDirectory(prefix='.update-', dir=install_dir) as directory:
+        staging = Path(directory); manifest_bytes = download(base + '/checksums.sha256'); (staging / 'checksums.sha256').write_bytes(manifest_bytes)
+        expected = {}
+        for line in manifest_bytes.decode('utf-8').splitlines():
+            checksum, name = line.split(None, 1); expected[name.strip()] = checksum.lower()
+        for name in names:
+            data = download(base + '/' + name)
+            if name not in expected or hashlib.sha256(data).hexdigest() != expected[name]: raise RuntimeError('Checksum verification failed for ' + name)
+            (staging / name).write_bytes(data)
+        backup.mkdir(parents=True, exist_ok=False)
+        for name in names:
+            source = install_dir / name
+            if source.exists(): shutil.copy2(source, backup / name)
+        service_path = Path('/etc/systemd/system/stream-gps-device.service')
+        if service_path.exists(): shutil.copy2(service_path, backup / 'installed.service')
+        command_paths = {
+            'installed-agent': Path('/usr/local/bin/stream-gps-agent'),
+            'installed-command': Path('/usr/local/bin/stream-gps-device'),
+        }
+        for backup_name, command_path in command_paths.items():
+            if command_path.exists(): shutil.copy2(command_path, backup / backup_name)
+        try:
+            for name in ('stream_gps_agent.py', 'stream-gps-device', 'VERSION'):
+                shutil.copy2(staging / name, install_dir / name)
+            os.chmod(install_dir / 'stream_gps_agent.py', 0o755); os.chmod(install_dir / 'stream-gps-device', 0o755)
+            shutil.copy2(staging / 'stream-gps-device.service', install_dir / 'stream-gps-device.service')
+            shutil.copy2(staging / 'stream-gps-device.service', service_path)
+            shutil.copy2(staging / 'stream_gps_agent.py', command_paths['installed-agent'])
+            shutil.copy2(staging / 'stream-gps-device', command_paths['installed-command'])
+            os.chmod(command_paths['installed-agent'], 0o755); os.chmod(command_paths['installed-command'], 0o755)
+            subprocess.run(['systemctl', 'daemon-reload'], check=True)
+            subprocess.run(['systemctl', 'restart', 'stream-gps-device'], check=True)
+            time.sleep(3)
+            if subprocess.run(['systemctl', 'is-active', '--quiet', 'stream-gps-device']).returncode != 0: raise RuntimeError('Updated service did not become active')
+            print('Updated Stream GPS Device to ' + release['available'])
+        except Exception:
+            for name in ('stream_gps_agent.py', 'stream-gps-device', 'VERSION'):
+                if (backup / name).exists(): shutil.copy2(backup / name, install_dir / name)
+            if (backup / 'installed.service').exists(): shutil.copy2(backup / 'installed.service', service_path)
+            for backup_name, command_path in command_paths.items():
+                if (backup / backup_name).exists(): shutil.copy2(backup / backup_name, command_path)
+            subprocess.run(['systemctl', 'daemon-reload'], check=False); subprocess.run(['systemctl', 'restart', 'stream-gps-device'], check=False)
+            raise
 
 def run(*command):
     return subprocess.run(command, text=True, capture_output=True, timeout=20, check=False)
@@ -162,15 +237,32 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/api/status':
             with LOCK: payload = dict(STATUS)
             self.respond(200, json.dumps(payload), 'application/json'); return
-        config = load_config(); status = dict(STATUS)
-        page = f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS Device</title><style>body{{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:760px;margin:30px auto;padding:16px}}section{{background:#121b2b;border:1px solid #28364b;border-radius:12px;padding:20px;margin:16px 0}}input{{width:100%;box-sizing:border-box;padding:10px;margin:5px 0 14px;background:#0f1726;color:white;border:1px solid #44536a;border-radius:7px}}button{{padding:10px 15px;background:#1f6feb;color:white;border:0;border-radius:7px}}.ok{{color:#35d39a}}.bad{{color:#f97066}}code{{overflow-wrap:anywhere}}</style></head><body><h1>Stream GPS Device</h1><section><h2>Status</h2><p>Modem: <b>{html.escape(str(status['modem'] or 'not detected'))}</b></p><p>GPS fix: <b class="{'ok' if status['gps_fix'] else 'bad'}">{'yes' if status['gps_fix'] else 'no'}</b></p><p>Queued points: <b>{status['queue_size']}</b></p><p>Last error: <code>{html.escape(str(status['last_error'] or 'none'))}</code></p></section><section><h2>Configuration</h2><form method="post" action="/save"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" value="{html.escape(config['api_url'])}" required><label>Device ID</label><input name="device_id" value="{html.escape(config['device_id'])}" required><label>New device key (leave empty to keep current)</label><input name="device_key" type="password"><label>Update interval in seconds (0.5–10)</label><input name="interval_seconds" type="number" min="0.5" max="10" step="0.5" value="{float(config.get('interval_seconds',2)):g}"><label>Modem ID (`auto` recommended)</label><input name="modem_id" value="{html.escape(str(config.get('modem_id','auto')))}"><button>Save configuration</button></form></section></body></html>'''
+        config = load_config(); status = dict(STATUS); update = status.get('update_check'); installed = current_version()
+        update_text = '' if not update else (f"<p>Available version: <b>{html.escape(update['available'])}</b></p>" + (f'<form method="post" action="/install-update"><input type="hidden" name="csrf" value="{self.csrf}"><button>Install update</button></form>' if update['update_available'] else '<p class="ok">You are up to date.</p>'))
+        page = f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS Device</title><style>body{{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:760px;margin:30px auto;padding:16px}}section{{background:#121b2b;border:1px solid #28364b;border-radius:12px;padding:20px;margin:16px 0}}input{{width:100%;box-sizing:border-box;padding:10px;margin:5px 0 14px;background:#0f1726;color:white;border:1px solid #44536a;border-radius:7px}}button{{padding:10px 15px;background:#1f6feb;color:white;border:0;border-radius:7px;margin-right:8px}}.ok{{color:#35d39a}}.bad{{color:#f97066}}code{{overflow-wrap:anywhere}}</style></head><body><h1>Stream GPS Device</h1><section><h2>Status</h2><p>Agent version: <b>{html.escape(installed)}</b></p><p>Modem: <b>{html.escape(str(status['modem'] or 'not detected'))}</b></p><p>GPS fix: <b class="{'ok' if status['gps_fix'] else 'bad'}">{'yes' if status['gps_fix'] else 'no'}</b></p><p>Queued points: <b>{status['queue_size']}</b></p><p>Last error: <code>{html.escape(str(status['last_error'] or 'none'))}</code></p></section><section><h2>Software update</h2><form method="post" action="/check-update"><input type="hidden" name="csrf" value="{self.csrf}"><button>Check for updates</button></form>{update_text}</section><section><h2>Configuration</h2><form method="post" action="/save"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" value="{html.escape(config['api_url'])}" required><label>Device ID</label><input name="device_id" value="{html.escape(config['device_id'])}" required><label>New device key (leave empty to keep current)</label><input name="device_key" type="password"><label>Update interval in seconds (0.5–10)</label><input name="interval_seconds" type="number" min="0.5" max="10" step="0.5" value="{float(config.get('interval_seconds',2)):g}"><label>Modem ID (`auto` recommended)</label><input name="modem_id" value="{html.escape(str(config.get('modem_id','auto')))}"><button>Save configuration</button></form></section></body></html>'''
         self.respond(200, page)
     def do_POST(self):
         if not self.require_auth(): return
-        if self.path != '/save': self.respond(404, 'Not found'); return
         from urllib.parse import parse_qs
         length = min(int(self.headers.get('Content-Length', '0')), 20000); form = parse_qs(self.rfile.read(length).decode())
         if form.get('csrf', [''])[0] != self.csrf: self.respond(403, 'Invalid form token'); return
+        if self.path == '/check-update':
+            try:
+                with LOCK: STATUS['update_check'] = check_update()
+                self.send_response(303); self.send_header('Location', '/'); self.end_headers()
+            except Exception as error: self.respond(502, 'Update check failed: ' + html.escape(str(error)))
+            return
+        if self.path == '/install-update':
+            try:
+                release = check_update()
+                if not release['update_available']: self.respond(409, 'No update is available'); return
+                unit = 'stream-gps-device-update-' + str(int(time.time()))
+                result = run('systemd-run', '--unit=' + unit, '--collect', '/usr/bin/python3', str(Path(__file__).resolve()), 'apply-update')
+                if result.returncode: raise RuntimeError(result.stderr.strip() or 'Unable to schedule updater')
+                self.respond(202, '<h1>Update started</h1><p>The agent will restart. Reload this page in about 15 seconds.</p>')
+            except Exception as error: self.respond(500, 'Unable to start update: ' + html.escape(str(error)))
+            return
+        if self.path != '/save': self.respond(404, 'Not found'); return
         config = load_config(); interval = float(form.get('interval_seconds', ['2'])[0]); api_url = form.get('api_url', [''])[0].rstrip('/')
         if not 0.5 <= interval <= 10: self.respond(400, 'Interval must be between 0.5 and 10 seconds'); return
         if not api_url.startswith(('http://', 'https://')): self.respond(400, 'Platform URL must begin with http:// or https://'); return
@@ -197,13 +289,14 @@ def diagnostic():
     return 0 if all(value for _, value in checks) else 1
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument('command', nargs='?', default='run', choices=['run','status','test','config'])
+    parser = argparse.ArgumentParser(); parser.add_argument('command', nargs='?', default='run', choices=['run','status','test','config','apply-update'])
     args = parser.parse_args()
     if args.command == 'status':
         print(json.dumps(STATUS, indent=2)); return
     if args.command == 'test': raise SystemExit(diagnostic())
     if args.command == 'config':
         config = load_config(); config['device_key'] = '***hidden***'; print(json.dumps(config, indent=2)); return
+    if args.command == 'apply-update': apply_update(); return
     threading.Thread(target=tracking_loop, daemon=True).start()
     config = load_config(); ThreadingHTTPServer((config.get('ui_bind', '0.0.0.0'), int(config.get('ui_port', 26666))), Handler).serve_forever()
 

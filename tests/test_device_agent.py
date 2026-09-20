@@ -5,6 +5,14 @@ SPEC = importlib.util.spec_from_file_location('stream_gps_agent', ROOT / 'device
 AGENT = importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(AGENT)
 
 class AgentTests(unittest.TestCase):
+    def test_release_versions_are_compared_numerically(self):
+        self.assertGreater(AGENT.version_tuple('1.10.0'), AGENT.version_tuple('1.9.9'))
+        with self.assertRaises(ValueError): AGENT.version_tuple('latest')
+
+    def test_update_source_requires_https(self):
+        self.assertEqual(AGENT.update_base({'update_base': 'https://updates.example/release/'}), 'https://updates.example/release')
+        with self.assertRaises(ValueError): AGENT.update_base({'update_base': 'http://updates.example/release'})
+
     def test_parses_raw_mmcli_fields(self):
         result = AGENT.parse_mmcli("""modem.location.gps.latitude : '51.923141'
 modem.location.gps.longitude : '15.518596'

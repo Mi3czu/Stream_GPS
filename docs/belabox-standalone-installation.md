@@ -193,7 +193,22 @@ To ostatnie polecenie bezpowrotnie usuwa zapisany klucz i niewysłane punkty.
 
 ## Aktualizacja
 
-Ponownie pobierz aktualny instalator, obejrzyj zmiany i uruchom go. Przed podmianą tworzona jest kopia konfiguracji. Aktualizacja BelaUI nie wymaga ponownej instalacji klienta Stream GPS.
+Od wersji `1.2.0` aktualizacje klienta są dostępne bezpośrednio w lokalnym panelu na porcie `26666`:
+
+1. Otwórz panel i zaloguj się.
+2. W sekcji **Software update** wybierz **Check for updates**.
+3. Jeżeli pojawi się nowsza wersja, wybierz **Install update**.
+4. Poczekaj około 15 sekund i odśwież stronę. W sekcji statusu powinna być widoczna nowa wersja.
+
+Aktualizacja nie uruchamia się bez potwierdzenia. Pliki są pobierane wyłącznie przez HTTPS i sprawdzane sumami SHA-256. Przed podmianą klient tworzy kopię w `/var/backups/stream-gps-device/`, a w razie nieudanego uruchomienia automatycznie przywraca poprzednią wersję. Konfiguracja urządzenia i kolejka pozycji nie są podmieniane.
+
+Informacje o przebiegu lub błędzie aktualizacji można sprawdzić poleceniem:
+
+```sh
+sudo journalctl -u 'stream-gps-device-update-*' -n 100 --no-pager
+```
+
+Pierwsze przejście ze starszej wersji, która nie ma sekcji **Software update**, wykonaj dotychczasową metodą: ponownie pobierz aktualny instalator, obejrzyj zmiany i uruchom go. Aktualizacja BelaUI nie wymaga ponownej instalacji klienta Stream GPS.
 
 ## Najczęstsze problemy
 
