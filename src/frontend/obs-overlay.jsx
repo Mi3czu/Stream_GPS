@@ -96,8 +96,8 @@ const ObsOverlay = () => {
       {config.statsPosition === 'above-map' && statsPanel}
       <div className={`obs-overlay__map obs-overlay__map--${config.mapShape}`} style={{ '--overlay-size': `${config.mapSize}px`, '--overlay-border': config.borderColor }}>
         <GpsMap positions={position} mapTheme={config.mapTheme} size={config.mapSize} zoomConfig={config} zoomControl={false} attributionControl={false} />
+        <small className="obs-overlay__credits">{config.mapTheme === 'satellite' ? 'Tiles © Esri' : <>© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</>}</small>
       </div>
-      <small className="obs-overlay__credits">{config.mapTheme === 'satellite' ? 'Tiles © Esri' : <>© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</>}</small>
       {config.statsPosition === 'below-map' && statsPanel}
     </main>
   );

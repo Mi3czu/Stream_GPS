@@ -10,12 +10,12 @@
 .overlay-settings__section input[type='range'] { display: block; max-width: 430px; width: 100%; }
 .overlay-settings__toggle { font-weight: 700; }
 .overlay-settings__hint { color: #475569; font-size: 0.9rem; }
-.overlay-settings__preview { height: 240px; width: 240px; }
+.overlay-settings__preview { height: 240px; position: relative; width: 240px; }
 .overlay-settings__preview .gps-map { height: 240px; width: 240px; }
 .overlay-settings__preview .leaflet-container { border: 3px solid var(--preview-border); box-sizing: border-box; height: 240px; overflow: hidden; width: 240px; }
 .overlay-settings__preview--round .gps-map, .overlay-settings__preview--round .leaflet-container { border-radius: 50%; }
 .overlay-settings__preview--round .gps-map { overflow: hidden; }
-.overlay-settings__attribution { color: #64748b; display: block; font-size: 10px; margin-top: 5px; }
+.overlay-settings__attribution { background: rgba(0, 0, 0, .46); border-radius: 2px; bottom: 18px; color: #e5edf7; font: 600 7px/1.15 sans-serif; left: 50%; padding: 1px 3px; position: absolute; text-shadow: 0 1px 2px #000; transform: translateX(-50%); white-space: nowrap; z-index: 500; }
 .overlay-settings__stats { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .overlay-settings__stats label { align-items: flex-start; display: flex; gap: 8px; }
 .overlay-settings__stats small { color: #64748b; display: block; font-size: 0.75rem; margin-top: 2px; }

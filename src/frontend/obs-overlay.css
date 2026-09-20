@@ -6,12 +6,12 @@
 }
 
 .obs-overlay { background: transparent; color: var(--overlay-text-color); margin: 0; min-height: 100vh; overflow: hidden; }
-.obs-overlay__map { height: var(--overlay-size); margin: 16px; width: var(--overlay-size); }
+.obs-overlay__map { height: var(--overlay-size); margin: 16px; position: relative; width: var(--overlay-size); }
 .obs-overlay__map .gps-map { height: var(--overlay-size); width: var(--overlay-size); }
 .obs-overlay__map .leaflet-container { border: 3px solid var(--overlay-border); box-sizing: border-box; height: var(--overlay-size); overflow: hidden; width: var(--overlay-size); }
 .obs-overlay__map--round .gps-map, .obs-overlay__map--round .leaflet-container { border-radius: 50%; }
 .obs-overlay__map--round .gps-map { overflow: hidden; }
-.obs-overlay__credits { background: rgba(0, 0, 0, 0.58); border-radius: 4px; color: #dbe4f0; display: block; font: 10px/1.3 sans-serif; margin: -11px 16px 12px; padding: 2px 5px; width: fit-content; }
+.obs-overlay__credits { background: rgba(0, 0, 0, 0.46); border-radius: calc(var(--overlay-size) * .008); bottom: calc(var(--overlay-size) * .075); color: #e5edf7; font: 600 clamp(6px, calc(var(--overlay-size) * .022), 11px)/1.15 sans-serif; left: 50%; padding: calc(var(--overlay-size) * .005) calc(var(--overlay-size) * .012); position: absolute; text-shadow: 0 1px 2px #000; transform: translateX(-50%); white-space: nowrap; z-index: 500; }
 .obs-overlay__credits a { color: inherit; }
 .obs-overlay__stats { background: rgba(0, 0, 0, 0.72); border-radius: 10px; display: flex; flex-wrap: wrap; font: 600 var(--stats-text-size) var(--overlay-font); gap: 8px 14px; margin: 0 16px 12px; padding: 8px 12px; width: fit-content; }
 .obs-overlay__stats strong { opacity: 0.72; }
