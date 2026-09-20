@@ -98,6 +98,8 @@ Przeglądarka poprosi o dane Basic Auth:
 
 Panel pokazuje modem, stan fixa GPS, rozmiar kolejki i ostatni błąd. Pozwala zmienić adres serwera, `DEVICE_ID`, klucz, numer modemu oraz interwał 2–300 sekund. Istniejący klucz nigdy nie jest wyświetlany.
 
+Agent odczytuje pola surowej lokalizacji ModemManagera i zdania NMEA RMC/GGA. Dzięki temu potrafi uzyskać prędkość w km/h, kierunek, wysokość oraz liczbę satelitów także wtedy, gdy modem nie wystawia ich jako osobnych pól `mmcli`.
+
 Port `26666` nie jest typowym portem BelaUI ani standardowych usług systemowych. Sprawdzenie konfliktu:
 
 ```sh

@@ -40,6 +40,7 @@ printf "DEVICE_KEY (input hidden): "; stty -echo; read -r DEVICE_KEY; stty echo;
 printf "Password for local configuration panel (minimum 12 characters, input hidden): "; stty -echo; read -r UI_PASSWORD; stty echo; printf '\n'
 [ "${#UI_PASSWORD}" -ge 12 ] || { echo "Panel password must contain at least 12 characters"; exit 1; }
 [ -n "$API_URL" ] && [ -n "$DEVICE_ID" ] && [ -n "$DEVICE_KEY" ] || { echo "URL, device ID and key are required"; exit 1; }
+case "$API_URL" in http://*|https://*) ;; *) echo "Platform URL must begin with http:// or https://"; exit 1 ;; esac
 
 backup
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR"
