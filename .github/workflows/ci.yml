@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            src/backend/package-lock.json
+            src/frontend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: src/backend
+        run: npm ci
+      - name: Check backend syntax
+        run: node --check src/backend/index.js
+      - name: Install and build frontend
+        working-directory: src/frontend
+        run: npm ci && npm run build
+      - name: Validate shell scripts
+        run: shellcheck installer/install-device.sh device-agent/stream-gps-device
+      - name: Test standalone device agent
+        run: python3 -m unittest -v tests/test_device_agent.py
+      - name: Start disposable application stack
+        run: docker compose -f compose.local.yaml up -d --build
+      - name: Wait for application
+        run: |
+          for attempt in $(seq 1 60); do
+            curl --fail --silent http://127.0.0.1:8080/ready && exit 0
+            sleep 2
+          done
+          exit 1
+      - name: Run API integration tests
+        run: python3 tests/api_integration.py
+      - name: Show container logs after failure
+        if: failure()
+        run: docker compose -f compose.local.yaml logs --no-color
+      - name: Stop disposable stack
+        if: always()
+        run: docker compose -f compose.local.yaml down -v

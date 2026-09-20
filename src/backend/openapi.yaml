@@ -1,0 +1,254 @@
+openapi: 3.1.0
+info:
+  title: Stream GPS API
+  version: 1.0.0
+  description: Multi-user GPS tracking API. Device secrets and overlay access keys are returned only once.
+servers:
+  - url: /
+security:
+  - userToken: []
+paths:
+  /health:
+    get:
+      security: []
+      summary: Liveness and database health
+      responses:
+        '200': { description: API and database are healthy }
+        '503': { description: Database is unavailable }
+  /ready:
+    get:
+      security: []
+      summary: Database and migration readiness
+      responses:
+        '200': { description: Application is ready to serve traffic }
+        '503': { description: Database is unavailable or migrations are pending }
+  /api/register:
+    post:
+      security: []
+      summary: Create a user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password]
+              properties:
+                username: { type: string, minLength: 3, maxLength: 50 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12, format: password }
+      responses:
+        '201': { description: Account created }
+        '409': { description: Username or email already exists }
+  /api/login:
+    post:
+      security: []
+      summary: Create an eight-hour user session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200': { description: JWT and account summary }
+        '401': { description: Invalid credentials }
+        '429': { description: Too many failed attempts }
+  /api/logout:
+    post:
+      summary: Revoke the current session
+      responses:
+        '200': { description: Logged out }
+  /api/me:
+    get:
+      summary: Current account and retention preference
+      responses:
+        '200': { description: Account details }
+  /api/me/password:
+    patch:
+      summary: Change password and revoke other sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string, format: password }
+                new_password: { type: string, minLength: 12, format: password }
+      responses:
+        '200': { description: Password changed }
+        '401': { description: Current password is incorrect }
+  /api/me/privacy:
+    patch:
+      summary: Configure GPS history retention
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retention_days:
+                  oneOf:
+                    - { type: integer, enum: [7, 30, 90, 365] }
+                    - { type: 'null' }
+      responses:
+        '200': { description: Retention saved and old data cleaned }
+  /api/v1/account/sessions:
+    get:
+      summary: List active account sessions
+      responses:
+        '200': { description: Active sessions }
+  /api/v1/account/sessions/revoke-others:
+    post:
+      summary: Revoke every session except the current one
+      responses:
+        '200': { description: Other sessions revoked }
+  /api/v1/devices:
+    get:
+      summary: List devices owned by the current account
+      responses:
+        '200': { description: Device list }
+    post:
+      summary: Register a device and issue its one-time key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                device_id: { type: string, pattern: '^[a-zA-Z0-9_-]{3,100}$' }
+      responses:
+        '201': { description: Device and one-time device_key }
+        '409': { description: Device ID already exists }
+  /api/v1/devices/{deviceId}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      summary: Get an owned device
+      responses:
+        '200': { description: Device details }
+        '404': { description: Device not found }
+    delete:
+      summary: Permanently delete a device and associated data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm_device_id]
+              properties:
+                confirm_device_id: { type: string }
+      responses:
+        '200': { description: Device deleted }
+  /api/v1/devices/{deviceId}/history:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      summary: Get GPS history
+      parameters:
+        - { in: query, name: from, schema: { type: string, format: date-time } }
+        - { in: query, name: to, schema: { type: string, format: date-time } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 5000 } }
+      responses:
+        '200': { description: Ordered GPS positions }
+    delete:
+      summary: Delete all GPS history and the last known position
+      responses:
+        '200': { description: History deleted }
+  /api/v1/devices/{deviceId}/history/export:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      summary: Export GPS history
+      parameters:
+        - { in: query, name: format, required: true, schema: { type: string, enum: [csv, gpx] } }
+        - { in: query, name: from, schema: { type: string, format: date-time } }
+        - { in: query, name: to, schema: { type: string, format: date-time } }
+      responses:
+        '200': { description: CSV or GPX download }
+  /api/v1/devices/{deviceId}/live-token:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      summary: Issue a five-minute token for the device SSE stream
+      responses:
+        '200': { description: Short-lived stream token }
+  /api/v1/devices/{deviceId}/live:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - { in: query, name: token, required: true, schema: { type: string } }
+    get:
+      security: []
+      summary: Live Server-Sent Events stream
+      responses:
+        '200': { description: Events named ready and position, content: { text/event-stream: {} } }
+  /api/v1/devices/{deviceId}/rotate-key:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      summary: Replace the device key and return it once
+      responses:
+        '200': { description: New one-time device_key }
+  /api/v1/devices/{deviceId}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      summary: Disable future GPS uploads from a device
+      responses:
+        '200': { description: Device revoked }
+  /api/v1/gps/update:
+    post:
+      security:
+        - deviceToken: []
+      summary: Submit a GPS position
+      description: Limited to 90 requests per device per minute. Timestamp tolerance is five minutes and every nonce can be used only once.
+      parameters:
+        - { in: header, name: X-Device-Id, required: true, schema: { type: string } }
+        - { in: header, name: X-Request-Timestamp, required: true, schema: { type: integer, description: Unix seconds } }
+        - { in: header, name: X-Request-Nonce, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GpsPosition'
+      responses:
+        '201': { description: Position accepted }
+        '400': { description: Invalid telemetry }
+        '401': { description: Device authentication failed }
+        '409': { description: Nonce already used }
+        '429': { description: Rate limit exceeded }
+components:
+  securitySchemes:
+    userToken: { type: http, scheme: bearer, bearerFormat: JWT }
+    deviceToken: { type: http, scheme: bearer, description: One-time issued device key }
+  parameters:
+    DeviceId:
+      in: path
+      name: deviceId
+      required: true
+      schema: { type: string }
+  schemas:
+    GpsPosition:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        altitude: { type: number }
+        speed: { type: number, minimum: 0, description: Kilometres per hour }
+        heading: { type: number, minimum: 0, exclusiveMaximum: 360 }
+        accuracy: { type: number, minimum: 0, description: Metres }
+        satellites: { type: integer, minimum: 0 }
+        recorded_at: { type: string, format: date-time }

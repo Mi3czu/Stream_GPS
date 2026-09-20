@@ -61,6 +61,12 @@ Uruchom:
 sudo sh /tmp/install-stream-gps-device.sh
 ```
 
+Opcjonalnie najpierw wykonaj kontrolę bez wprowadzania zmian:
+
+```sh
+sh /tmp/install-stream-gps-device.sh --dry-run
+```
+
 Instalator zapyta o:
 
 - bazowy adres platformy, np. `https://gps.example.com` — bez `/api/v1/gps/update`;
@@ -75,6 +81,7 @@ Instalator:
 - zapisze sekrety w `/etc/stream-gps-device/config.json` z prawami `600`;
 - utworzy kolejkę offline w `/var/lib/stream-gps-device`;
 - zainstaluje i uruchomi `stream-gps-device.service`;
+- sprawdzi sumy SHA-256 pobranych plików i przywróci backup, jeśli usługa nie wystartuje;
 - nie dotknie katalogu `/opt/belaUI`.
 
 ## 4. Otwieranie własnego panelu konfiguracyjnego

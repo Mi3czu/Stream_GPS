@@ -1,14 +1,13 @@
 services:
   postgres:
     image: postgres:18
-    container_name: stream-gps-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: stream_gps
       POSTGRES_USER: stream_gps
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stream_gps_local_only}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./database/migrations:/docker-entrypoint-initdb.d:ro
@@ -62,11 +61,10 @@ services:
       context: .
       dockerfile: src/frontend/Dockerfile
     restart: unless-stopped
-    environment:
-      APP_DOMAIN: http://localhost:8080
     ports:
-      - "8080:8080"
+      - "${APP_PORT:-8080}:8080"
     volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
       - caddy_local_data:/data
       - caddy_local_config:/config
     depends_on:

@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
@@ -20,6 +22,14 @@ if (!process.env.JWT_SECRET) {
 
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
+
+app.get('/api/openapi.yaml', (req, res) => {
+  res.type('text/yaml').send(fs.readFileSync(path.join(__dirname, 'openapi.yaml'), 'utf8'));
+});
+
+app.get('/api/docs', (req, res) => {
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS API</title><link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"></head><body><div id="swagger-ui"></div><script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script><script>SwaggerUIBundle({url:'/api/openapi.yaml',dom_id:'#swagger-ui',deepLinking:true,persistAuthorization:false});</script></body></html>`);
+});
 
 function loginIdentifier(req, username) {
   return crypto.createHash('sha256')
@@ -307,6 +317,19 @@ app.get('/health', async (req, res) => {
   } catch (error) {
     console.error('Health check failed:', error.message);
     res.status(503).json({ status: 'unavailable', database: 'unavailable' });
+  }
+});
+
+app.get('/ready', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = '008_privacy_retention.sql') AS migrations_ready`
+    );
+    if (!result.rows[0].migrations_ready) return res.status(503).json({ status: 'not_ready', database: 'ok', migrations: 'pending' });
+    res.json({ status: 'ready', database: 'ok', migrations: 'ok' });
+  } catch (error) {
+    console.error('Readiness check failed:', error.message);
+    res.status(503).json({ status: 'not_ready', database: 'unavailable', migrations: 'unknown' });
   }
 });
 

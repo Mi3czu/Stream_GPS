@@ -1,4 +1,4 @@
-{$APP_DOMAIN} {
+:8080 {
   encode zstd gzip
   root * /usr/share/caddy
 

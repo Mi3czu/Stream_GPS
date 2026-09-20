@@ -87,6 +87,8 @@ The custom-format dump is written to the ignored `backups/` directory. To restor
 
 ## GPS update API
 
+Interactive API documentation is available at `/api/docs`; the source OpenAPI document is available at `/api/openapi.yaml`.
+
 `POST /api/v1/gps/update` requires:
 
 - `Authorization: Bearer <device key>`
