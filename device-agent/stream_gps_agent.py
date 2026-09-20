@@ -283,7 +283,7 @@ class Handler(BaseHTTPRequestHandler):
                 unit = 'stream-gps-device-update-' + str(int(time.time()))
                 result = run('systemd-run', '--unit=' + unit, '--collect', '/usr/bin/python3', str(Path(__file__).resolve()), 'apply-update')
                 if result.returncode: raise RuntimeError(result.stderr.strip() or 'Unable to schedule updater')
-                self.respond(202, '<h1>Update started</h1><p>The agent will restart. Reload this page in about 15 seconds.</p>')
+                self.respond(202, '''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="refresh" content="20;url=/"><title>Updating Stream GPS Device</title><style>body{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:680px;margin:60px auto;padding:20px}a{color:#79b8ff}</style></head><body><h1>Update started</h1><p>The agent is restarting. Returning to the main page in <b id="countdown">20</b> seconds.</p><p><a href="/">Return now</a></p><script>let remaining=20;const timer=setInterval(()=>{remaining-=1;document.getElementById('countdown').textContent=remaining;if(remaining<=0){clearInterval(timer);location.replace('/')}},1000)</script></body></html>''')
             except Exception as error: self.respond(500, 'Unable to start update: ' + html.escape(str(error)))
             return
         if self.path != '/save': self.respond(404, 'Not found'); return

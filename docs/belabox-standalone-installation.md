@@ -200,7 +200,7 @@ Od wersji `1.2.0` aktualizacje klienta są dostępne bezpośrednio w lokalnym pa
 1. Otwórz panel i zaloguj się.
 2. W znajdującej się na dole panelu sekcji **System** wybierz **Check for updates**.
 3. Jeżeli pojawi się nowsza wersja, wybierz **Install update**.
-4. Poczekaj około 15 sekund i odśwież stronę. W sekcji statusu powinna być widoczna nowa wersja.
+4. Poczekaj około 20 sekund. Ekran aktualizacji automatycznie wróci na stronę główną, gdzie w sekcji **System** powinna być widoczna nowa wersja.
 
 Aktualizacja nie uruchamia się bez potwierdzenia. Pliki są pobierane wyłącznie przez HTTPS i sprawdzane sumami SHA-256. Przed podmianą klient tworzy kopię w `/var/backups/stream-gps-device/`, a w razie nieudanego uruchomienia automatycznie przywraca poprzednią wersję. Konfiguracja urządzenia i kolejka pozycji nie są podmieniane.
 
