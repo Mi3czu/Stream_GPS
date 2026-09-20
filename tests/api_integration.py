@@ -28,6 +28,8 @@ def main():
     device_id = f'ci_device_{RUN}'
     created = request('POST', '/api/v1/devices', {'name': 'CI tracker', 'device_id': device_id}, owner, expected=201)
     device_key = created['device_key']
+    credentials = request('GET', f'/api/v1/devices/{device_id}/credentials', token=owner)
+    assert credentials['device_key'] == device_key and credentials['overlays'] == []
     assert any(item['device_id'] == device_id for item in request('GET', '/api/v1/devices', token=owner)['devices'])
     assert all(item['device_id'] != device_id for item in request('GET', '/api/v1/devices', token=stranger)['devices'])
     request('GET', f'/api/v1/devices/{device_id}', token=stranger, expected=404)
@@ -39,6 +41,18 @@ def main():
                 'heading': 84.4, 'accuracy': 4.0, 'satellites': 12}
     request('POST', '/api/v1/gps/update', position, headers=gps_headers, expected=201)
     request('POST', '/api/v1/gps/update', position, headers=gps_headers, expected=409)
+    overlay_created = request('POST', f'/api/v1/devices/{device_id}/overlays', {'name': 'CI overlay'}, owner, expected=201)
+    overlay_id, overlay_key = overlay_created['overlay']['id'], overlay_created['access_key']
+    credentials = request('GET', f'/api/v1/devices/{device_id}/credentials', token=owner)
+    assert credentials['overlays'][0]['access_key'] == overlay_key
+    request('GET', f'/api/v1/overlays/{overlay_id}/data?key={overlay_key}')
+    rotated_overlay = request('POST', f'/api/v1/overlays/{overlay_id}/rotate-key', token=owner)
+    assert rotated_overlay['access_key'] != overlay_key
+    request('GET', f'/api/v1/overlays/{overlay_id}/data?key={overlay_key}', expected=404)
+    request('GET', f"/api/v1/overlays/{overlay_id}/data?key={rotated_overlay['access_key']}")
+    request('POST', f'/api/v1/overlays/{overlay_id}/revoke', token=owner)
+    request('DELETE', f'/api/v1/overlays/{overlay_id}', token=owner)
+    assert request('GET', f'/api/v1/devices/{device_id}/overlays', token=owner)['overlays'] == []
     history = request('GET', f'/api/v1/devices/{device_id}/history', token=owner)['positions']
     assert len(history) == 1 and float(history[0]['speed']) == 18.5
     csv = request('GET', f'/api/v1/devices/{device_id}/history/export?format=csv', token=owner)

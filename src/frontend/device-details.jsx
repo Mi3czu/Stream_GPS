@@ -23,6 +23,8 @@ const DeviceDetails = () => {
   const [loading, setLoading] = useState(true);
   const [overlayResult, setOverlayResult] = useState(null);
   const [overlays, setOverlays] = useState([]);
+  const [credentials, setCredentials] = useState({ device_key: null, overlays: [] });
+  const [visibleKeys, setVisibleKeys] = useState({});
   const token = sessionStorage.getItem('accessToken');
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -31,12 +33,13 @@ const DeviceDetails = () => {
     const params = new URLSearchParams({ limit: '5000' });
     if (rangeHours !== 'all') params.set('from', new Date(Date.now() - Number(rangeHours) * 3600000).toISOString());
     try {
-      const [deviceResponse, historyResponse, overlaysResponse] = await Promise.all([
+      const [deviceResponse, historyResponse, overlaysResponse, credentialsResponse] = await Promise.all([
         axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}`, { headers }),
         axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/history?${params}`, { headers }),
-        axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/overlays`, { headers })
+        axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/overlays`, { headers }),
+        axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/credentials`, { headers })
       ]);
-      setDevice(deviceResponse.data.device); setPositions(historyResponse.data.positions); setOverlays(overlaysResponse.data.overlays); setError(null);
+      setDevice(deviceResponse.data.device); setPositions(historyResponse.data.positions); setOverlays(overlaysResponse.data.overlays); setCredentials(credentialsResponse.data); setError(null);
     } catch (requestError) {
       if (requestError.response?.status === 401) { sessionStorage.removeItem('accessToken'); navigate('/login', { replace: true }); return; }
       setError(requestError.response?.data?.message || requestError.message);
@@ -84,13 +87,33 @@ const DeviceDetails = () => {
     try {
       const response = await axios.post(`/api/v1/devices/${encodeURIComponent(deviceId)}/overlays`, { name: `${device?.name || deviceId} OBS` }, { headers });
       setOverlayResult(response.data); setOverlays((current) => [response.data.overlay, ...current]);
+      setCredentials((current) => ({ ...current, overlays: [{ ...response.data.overlay, access_key: response.data.access_key }, ...current.overlays] }));
     } catch (requestError) { setError(requestError.response?.data?.message || requestError.message); }
   };
 
   const revokeOverlay = async (overlayId) => {
-    if (!window.confirm('Revoke this OBS overlay? Its URL will stop working immediately.')) return;
-    try { await axios.post(`/api/v1/overlays/${encodeURIComponent(overlayId)}/revoke`, {}, { headers }); setOverlays((current) => current.map((o) => o.id === overlayId ? { ...o, status: 'revoked' } : o)); }
+    if (!window.confirm('Disable this OBS overlay? Its URL will stop working immediately.')) return;
+    try { await axios.post(`/api/v1/overlays/${encodeURIComponent(overlayId)}/revoke`, {}, { headers }); setOverlays((current) => current.map((o) => o.id === overlayId ? { ...o, status: 'revoked' } : o)); setCredentials((current) => ({ ...current, overlays: current.overlays.map((o) => o.id === overlayId ? { ...o, status: 'revoked' } : o) })); }
     catch (requestError) { setError(requestError.response?.data?.message || requestError.message); }
+  };
+
+  const replaceOverlayKey = async (overlayId) => {
+    if (!window.confirm('Replace this pull key? The current OBS URL will stop working immediately.')) return;
+    try {
+      const response = await axios.post(`/api/v1/overlays/${encodeURIComponent(overlayId)}/rotate-key`, {}, { headers });
+      setCredentials((current) => ({ ...current, overlays: current.overlays.map((o) => o.id === overlayId ? { ...o, access_key: response.data.access_key } : o) }));
+      setVisibleKeys((current) => ({ ...current, [overlayId]: true })); setError(null);
+    } catch (requestError) { setError(requestError.response?.data?.message || requestError.message); }
+  };
+
+  const deleteOverlay = async (overlayId) => {
+    if (!window.confirm('Permanently delete this overlay? This cannot be undone.')) return;
+    try {
+      await axios.delete(`/api/v1/overlays/${encodeURIComponent(overlayId)}`, { headers });
+      setOverlays((current) => current.filter((o) => o.id !== overlayId));
+      setCredentials((current) => ({ ...current, overlays: current.overlays.filter((o) => o.id !== overlayId) }));
+      setError(null);
+    } catch (requestError) { setError(requestError.response?.data?.message || requestError.message); }
   };
 
   const updatePublicSharing = async (enabled) => {
@@ -148,13 +171,19 @@ const DeviceDetails = () => {
         <span className="metric">Coordinates<strong>{device.last_latitude === null ? 'No GPS fix' : `${device.last_latitude}, ${device.last_longitude}`}</strong></span><span className="metric">Altitude<strong>{device.last_altitude ?? '—'} m</strong></span><span className="metric">Heading<strong>{device.last_heading ?? '—'}°</strong></span><span className="metric">Accuracy<strong>{device.last_accuracy ?? '—'} m</strong></span><span className="metric">Satellites<strong>{device.last_satellites ?? '—'}</strong></span><span className="metric">GPS time<strong>{device.last_recorded_at ? new Date(device.last_recorded_at).toLocaleString() : '—'}</strong></span>
       </div></section>
       <section className="panel"><div className="panel__header"><h2>History and export</h2></div><div className="toolbar"><select value={rangeHours} onChange={(event) => setRangeHours(event.target.value)}><option value="1">Last hour</option><option value="6">Last 6 hours</option><option value="24">Last 24 hours</option><option value="168">Last 7 days</option><option value="all">All saved points</option></select><button onClick={() => exportHistory('csv')}>Export CSV</button><button onClick={() => exportHistory('gpx')}>Export GPX</button><button className="button--danger" onClick={deleteHistory}>Delete history</button></div></section>
+      <section className="panel"><div className="panel__header"><div><h2>Your keys</h2><p className="panel__hint">Secrets are available only to the device owner and are never included in public links.</p></div></div>
+        <div className="key-list"><div className="key-row"><label>Push key <small>for the GPS device</small></label>{credentials.device_key ? <div className="key-field"><input readOnly type={visibleKeys.device ? 'text' : 'password'} value={credentials.device_key} /><button className="button--secondary" onClick={() => setVisibleKeys((current) => ({ ...current, device: !current.device }))}>{visibleKeys.device ? 'Hide' : 'Show'}</button><button onClick={() => navigator.clipboard.writeText(credentials.device_key)}>Copy</button></div> : <p className="panel__hint">Waiting for the existing GPS device to authenticate. Refresh after its next upload; replace the GPS key only if the original configuration is no longer available.</p>}</div>
+          {credentials.overlays.map((credential) => <div className="key-row" key={credential.id}><label>Pull key — {credential.name} <small>{credential.status}</small></label>{credential.status !== 'active' ? <p className="panel__hint">This overlay is disabled. Delete it below when it is no longer needed.</p> : credential.access_key ? <div className="key-field"><input readOnly type={visibleKeys[credential.id] ? 'text' : 'password'} value={credential.access_key} /><button className="button--secondary" onClick={() => setVisibleKeys((current) => ({ ...current, [credential.id]: !current[credential.id] }))}>{visibleKeys[credential.id] ? 'Hide' : 'Show'}</button><button onClick={() => navigator.clipboard.writeText(credential.access_key)}>Copy</button></div> : <div><p className="panel__hint">Open the existing OBS URL once and refresh this page to import its key, or replace the pull key now.</p><button className="button--secondary" onClick={() => replaceOverlayKey(credential.id)}>Replace pull key</button></div>}</div>)}
+          {!credentials.overlays.length && <p className="panel__hint">Create an OBS overlay to issue a pull key.</p>}
+        </div>
+      </section>
       <section className="panel"><div className="panel__header"><div><h2>Viewer map</h2><p className="panel__hint">Share only your current position. Saved route history remains private.</p></div><span className={`status-pill ${device.public_share_enabled ? 'status-pill--online' : 'status-pill--offline'}`}>{device.public_share_enabled ? 'sharing on' : 'sharing off'}</span></div>
         <div className="sharing-actions"><button onClick={() => updatePublicSharing(!device.public_share_enabled)} className={device.public_share_enabled ? 'button--danger' : ''}>{device.public_share_enabled ? 'Stop sharing' : 'Start sharing'}</button>{device.public_share_id && <button className="button--secondary" onClick={regeneratePublicLink}>Regenerate link</button>}</div>
         {publicMapUrl && <div className="share-link"><div><strong>Public viewer link</strong><code>{publicMapUrl}</code><div className="sharing-actions"><button onClick={() => navigator.clipboard.writeText(publicMapUrl)}>Copy link</button><a className="button button--secondary" href={publicMapUrl} target="_blank" rel="noreferrer">Open preview</a></div>{!device.public_share_enabled && <p className="panel__hint">This link is currently disabled and exposes no location. Starting sharing will reactivate it.</p>}</div>{device.public_share_enabled && <div className="share-qr"><QRCodeSVG value={publicMapUrl} size={150} level="M" title="QR code for the public viewer map" /></div>}</div>}
       </section>
       <section className="panel"><div className="panel__header"><h2>OBS overlays</h2><button onClick={createOverlay}>Create overlay</button></div>
         {overlayResult && <div className="alert alert--success"><strong>Save this URL now:</strong><br /><code>{`${window.location.origin}${overlayResult.overlay_path}`}</code></div>}
-        <div className="device-list">{overlays.map((overlay) => <article className="device-card" key={overlay.id}><div className="device-card__top"><strong>{overlay.name}</strong><span>{overlay.status}</span></div><div className="device-card__actions"><button onClick={() => navigate(`/devices/${encodeURIComponent(deviceId)}/overlays/${encodeURIComponent(overlay.id)}`)}>Configure</button>{overlay.status === 'active' && <button className="button--danger" onClick={() => revokeOverlay(overlay.id)}>Revoke</button>}</div></article>)}{!overlays.length && <p>No overlays created.</p>}</div>
+        <div className="device-list">{overlays.map((overlay) => <article className="device-card" key={overlay.id}><div className="device-card__top"><strong>{overlay.name}</strong><span>{overlay.status}</span></div><div className="device-card__actions">{overlay.status === 'active' && <button onClick={() => navigate(`/devices/${encodeURIComponent(deviceId)}/overlays/${encodeURIComponent(overlay.id)}`)}>Configure</button>}{overlay.status === 'active' && <button className="button--secondary" onClick={() => replaceOverlayKey(overlay.id)}>Replace pull key</button>}{overlay.status === 'active' && <button className="button--secondary" onClick={() => revokeOverlay(overlay.id)}>Disable</button>}<button className="button--danger" onClick={() => deleteOverlay(overlay.id)}>Delete</button></div></article>)}{!overlays.length && <p>No overlays created.</p>}</div>
       </section>
       <section className="panel danger-zone"><h2>Danger zone</h2><p>Permanently removes this device, all positions, sessions and overlay configuration.</p><button className="button--danger" onClick={deleteDevice}>Delete device permanently</button></section>
     </>}

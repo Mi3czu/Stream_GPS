@@ -65,6 +65,7 @@ async function authenticateDevice(req, res, next) {
     }
 
     req.device = device;
+    req.deviceKey = key;
     req.requestNonce = nonce;
     next();
   } catch (error) {

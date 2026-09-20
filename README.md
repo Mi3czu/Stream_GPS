@@ -58,7 +58,7 @@ Open `http://localhost:5173`.
 ## Production deployment
 
 1. Copy `.env.example` to `.env`.
-2. Set a long, unique `POSTGRES_PASSWORD` and `JWT_SECRET` in `.env`.
+2. Set a long, unique `POSTGRES_PASSWORD` and `JWT_SECRET` in `.env`. Keep `JWT_SECRET` stable and backed up: it also protects the encrypted credential vault, so changing it makes stored push and pull keys unreadable until the devices authenticate again or the keys are replaced.
 3. Set `APP_DOMAIN` to the public DNS name, for example `gps.example.com`.
 4. Point the domain's DNS A/AAAA record at the server and allow inbound TCP ports 80 and 443.
 5. Run:

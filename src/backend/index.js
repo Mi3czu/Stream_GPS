@@ -20,6 +20,27 @@ if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is required');
 }
 
+const keyVaultKey = crypto.createHash('sha256').update(`stream-gps-key-vault:${process.env.JWT_SECRET}`).digest();
+
+function encryptSecret(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', keyVaultKey, iv);
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  return [iv, cipher.getAuthTag(), encrypted].map((part) => part.toString('base64url')).join('.');
+}
+
+function decryptSecret(value) {
+  if (!value) return null;
+  try {
+    const [iv, tag, encrypted] = value.split('.').map((part) => Buffer.from(part, 'base64url'));
+    const decipher = crypto.createDecipheriv('aes-256-gcm', keyVaultKey, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 
@@ -137,7 +158,7 @@ function escapeXml(value) {
 
 async function getOverlayForPublicAccess(overlayId, accessKey) {
   const result = await pool.query(
-    `SELECT o.id, o.access_key_hash, o.config, d.name, d.device_id, d.status, d.last_seen_at,
+    `SELECT o.id, o.access_key_hash, o.access_key_encrypted, o.config, d.name, d.device_id, d.status, d.last_seen_at,
             d.last_latitude, d.last_longitude, d.last_speed, d.last_heading, d.last_altitude,
             d.last_accuracy, d.last_satellites, d.last_recorded_at,
             session.distance_m AS trip_distance_m, session.max_speed AS max_session_speed,
@@ -152,6 +173,9 @@ async function getOverlayForPublicAccess(overlayId, accessKey) {
   );
   const overlay = result.rows[0];
   if (!overlay || !(await bcrypt.compare(accessKey, overlay.access_key_hash))) return null;
+  if (!overlay.access_key_encrypted) {
+    await pool.query('UPDATE overlays SET access_key_encrypted = $2 WHERE id = $1 AND access_key_encrypted IS NULL', [overlay.id, encryptSecret(accessKey)]);
+  }
   return overlay;
 }
 
@@ -606,10 +630,10 @@ app.post('/api/v1/devices', authenticate, async (req, res) => {
     const deviceKey = `dkey_${crypto.randomBytes(32).toString('base64url')}`;
     const deviceKeyHash = await bcrypt.hash(deviceKey, 12);
     const result = await pool.query(
-      `INSERT INTO devices (device_id, name, device_key_hash, owner_id)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO devices (device_id, name, device_key_hash, device_key_encrypted, owner_id)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id, device_id, name, status, created_at`,
-      [deviceId, name, deviceKeyHash, req.user.sub]
+      [deviceId, name, deviceKeyHash, encryptSecret(deviceKey), req.user.sub]
     );
     await recordAudit(req, 'device.created', 'device', deviceId, { name });
 
@@ -662,6 +686,35 @@ app.get('/api/v1/devices/:deviceId', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Get device error:', error.message);
     sendError(res, 500, 'DEVICE_READ_FAILED', 'Unable to load device');
+  }
+});
+
+app.get('/api/v1/devices/:deviceId/credentials', authenticate, async (req, res) => {
+  try {
+    const deviceResult = await pool.query(
+      `SELECT id, device_id, device_key_encrypted FROM devices
+       WHERE device_id = $1 AND owner_id = $2`,
+      [req.params.deviceId, req.user.sub]
+    );
+    const device = deviceResult.rows[0];
+    if (!device) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Unknown device');
+    const overlayResult = await pool.query(
+      `SELECT id, name, status, access_key_encrypted FROM overlays
+       WHERE device_id = $1 ORDER BY created_at DESC`,
+      [device.id]
+    );
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      device_id: device.device_id,
+      device_key: decryptSecret(device.device_key_encrypted),
+      overlays: overlayResult.rows.map((overlay) => ({
+        id: overlay.id, name: overlay.name, status: overlay.status,
+        access_key: decryptSecret(overlay.access_key_encrypted)
+      }))
+    });
+  } catch (error) {
+    console.error('Credentials read error:', error.message);
+    sendError(res, 500, 'CREDENTIALS_READ_FAILED', 'Unable to load credentials');
   }
 });
 
@@ -878,10 +931,10 @@ app.post('/api/v1/devices/:deviceId/overlays', authenticate, async (req, res) =>
 
     const accessKey = `ovl_${crypto.randomBytes(32).toString('base64url')}`;
     const result = await pool.query(
-      `INSERT INTO overlays (device_id, name, access_key_hash)
-       SELECT id, $2, $3 FROM devices WHERE device_id = $1 AND owner_id = $4
+      `INSERT INTO overlays (device_id, name, access_key_hash, access_key_encrypted)
+       SELECT id, $2, $3, $4 FROM devices WHERE device_id = $1 AND owner_id = $5
        RETURNING id, name, status, created_at`,
-      [req.params.deviceId, name, await bcrypt.hash(accessKey, 12), req.user.sub]
+      [req.params.deviceId, name, await bcrypt.hash(accessKey, 12), encryptSecret(accessKey), req.user.sub]
     );
     const overlay = result.rows[0];
     if (!overlay) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Unknown device');
@@ -969,6 +1022,47 @@ app.post('/api/v1/overlays/:overlayId/revoke', authenticate, async (req, res) =>
   }
 });
 
+app.post('/api/v1/overlays/:overlayId/rotate-key', authenticate, async (req, res) => {
+  try {
+    const accessKey = `ovl_${crypto.randomBytes(32).toString('base64url')}`;
+    const result = await pool.query(
+      `UPDATE overlays o SET access_key_hash = $2, access_key_encrypted = $3, updated_at = NOW()
+       FROM devices d
+       WHERE o.id = $1 AND o.status = 'active' AND d.id = o.device_id AND d.owner_id = $4
+       RETURNING o.id, o.name, o.status`,
+      [req.params.overlayId, await bcrypt.hash(accessKey, 12), encryptSecret(accessKey), req.user.sub]
+    );
+    if (!result.rows[0]) return sendError(res, 404, 'OVERLAY_NOT_FOUND', 'Active overlay not found');
+    await recordAudit(req, 'overlay.key_replaced', 'overlay', req.params.overlayId);
+    res.json({ overlay: result.rows[0], access_key: accessKey });
+  } catch (error) {
+    console.error('Overlay key rotation error:', error.message);
+    sendError(res, 500, 'OVERLAY_KEY_ROTATION_FAILED', 'Unable to replace overlay key');
+  }
+});
+
+app.delete('/api/v1/overlays/:overlayId', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM overlays o USING devices d
+       WHERE o.id = $1 AND d.id = o.device_id AND d.owner_id = $2
+       RETURNING o.id, o.name`,
+      [req.params.overlayId, req.user.sub]
+    );
+    if (!result.rows[0]) return sendError(res, 404, 'OVERLAY_NOT_FOUND', 'Overlay not found');
+    const listeners = overlayStreams.get(req.params.overlayId);
+    if (listeners) {
+      for (const response of listeners) { writeSse(response, 'revoked', {}); response.end(); }
+      overlayStreams.delete(req.params.overlayId);
+    }
+    await recordAudit(req, 'overlay.deleted', 'overlay', req.params.overlayId, { name: result.rows[0].name });
+    res.json({ message: 'Overlay permanently deleted' });
+  } catch (error) {
+    console.error('Overlay delete error:', error.message);
+    sendError(res, 500, 'OVERLAY_DELETE_FAILED', 'Unable to delete overlay');
+  }
+});
+
 app.get('/api/v1/overlays/:overlayId/data', async (req, res) => {
   try {
     const key = String(req.query.key || '');
@@ -1019,10 +1113,10 @@ app.post('/api/v1/devices/:deviceId/rotate-key', authenticate, async (req, res) 
   try {
     const deviceKey = `dkey_${crypto.randomBytes(32).toString('base64url')}`;
     const result = await pool.query(
-      `UPDATE devices SET device_key_hash = $1, updated_at = NOW()
-       WHERE device_id = $2 AND owner_id = $3 AND status = 'active'
+      `UPDATE devices SET device_key_hash = $1, device_key_encrypted = $2, updated_at = NOW()
+       WHERE device_id = $3 AND owner_id = $4 AND status = 'active'
        RETURNING device_id, name`,
-      [await bcrypt.hash(deviceKey, 12), req.params.deviceId, req.user.sub]
+      [await bcrypt.hash(deviceKey, 12), encryptSecret(deviceKey), req.params.deviceId, req.user.sub]
     );
     if (!result.rows[0]) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Active device not found');
     await recordAudit(req, 'device.key_replaced', 'device', req.params.deviceId);
@@ -1146,11 +1240,12 @@ app.post('/api/v1/gps/update', authenticateDevice, async (req, res) => {
     await client.query(
       `UPDATE devices SET last_seen_at = NOW(), updated_at = NOW(),
        last_latitude = $2, last_longitude = $3, last_altitude = $4, last_speed = $5,
-       last_heading = $6, last_accuracy = $7, last_satellites = $8, last_recorded_at = $9
+       last_heading = $6, last_accuracy = $7, last_satellites = $8, last_recorded_at = $9,
+       device_key_encrypted = COALESCE(device_key_encrypted, $10)
        WHERE id = $1`,
       [req.device.id, position.latitude, position.longitude, position.altitude ?? null,
         position.speed ?? null, position.heading ?? null, position.accuracy ?? null,
-        position.satellites ?? null, position.recordedAt]
+        position.satellites ?? null, position.recordedAt, encryptSecret(req.deviceKey)]
     );
     await client.query('COMMIT');
     res.status(201).json({ status: 'accepted', recorded_at: position.recordedAt.toISOString() });

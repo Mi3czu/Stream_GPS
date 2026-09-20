@@ -166,6 +166,13 @@ paths:
       summary: Delete all GPS history and the last known position
       responses:
         '200': { description: History deleted }
+  /api/v1/devices/{deviceId}/credentials:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      summary: Retrieve encrypted-at-rest push and pull keys for the device owner
+      responses:
+        '200': { description: Device key and overlay keys; legacy keys may be null until replaced }
   /api/v1/devices/{deviceId}/history/export:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
@@ -258,6 +265,20 @@ paths:
       summary: Replace the device key and return it once
       responses:
         '200': { description: New one-time device_key }
+  /api/v1/overlays/{overlayId}/rotate-key:
+    post:
+      summary: Replace an active overlay pull key
+      parameters:
+        - { in: path, name: overlayId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: New overlay access key }
+  /api/v1/overlays/{overlayId}:
+    delete:
+      summary: Permanently delete an active or disabled overlay
+      parameters:
+        - { in: path, name: overlayId, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Overlay deleted }
   /api/v1/devices/{deviceId}/revoke:
     parameters:
       - $ref: '#/components/parameters/DeviceId'

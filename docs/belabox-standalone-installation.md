@@ -23,6 +23,8 @@ GPS może uzyskać pozycję bez karty SIM, ale pierwszy fix po zimnym starcie mo
 
 Nie zapisuj klucza w GitHubie, wiadomości publicznej ani zrzucie ekranu.
 
+Po pierwszym poprawnym połączeniu klucz można później podejrzeć i skopiować w sekcji **Your keys** na stronie urządzenia. Serwer nadal używa hasha do uwierzytelniania, a kopię przeznaczoną dla właściciela przechowuje zaszyfrowaną.
+
 ## 2. Sprawdzenie modemu przed instalacją
 
 Połącz się z Belaboxem przez SSH i wykonaj:
