@@ -4,9 +4,11 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "express": "^5.2.1",
-    "mongoose": "^9.10.1"
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.10.1",
+    "pg": "^8.23.0"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node --env-file=../../.env --env-file=.env index.js"
   }
 }

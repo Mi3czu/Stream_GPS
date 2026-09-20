@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: stream-gps-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stream_gps
+      POSTGRES_USER: stream_gps
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stream_gps -d stream_gps"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_data:

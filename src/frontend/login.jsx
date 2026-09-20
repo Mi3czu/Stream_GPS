@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const Login = () => {
+  const navigate = useNavigate();
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -9,6 +12,7 @@ const Login = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
     setError(null);
     setSuccess(null);
 
@@ -18,10 +22,16 @@ const Login = () => {
         password
       });
 
+      sessionStorage.setItem('accessToken', response.data.token);
+
       setSuccess(response.data.message);
       setPassword('');
-    } catch (error) {
-      setError(error.response?.data?.message || error.message);
+
+      navigate('/dashboard');
+    } catch (requestError) {
+      setError(
+        requestError.response?.data?.message || requestError.message
+      );
     }
   };
 

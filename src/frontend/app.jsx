@@ -1,6 +1,9 @@
 import { Link, Route, Routes } from 'react-router-dom';
 import Login from './login.jsx';
 import Register from './register.jsx';
+import Dashboard from './dashboard';
+import Devices from './devices.jsx';
+import DeviceDetails from './device-details.jsx';
 
 function Home() {
   return (
@@ -24,6 +27,9 @@ export default function App() {
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/devices" element={<Devices />} />
+      <Route path="/devices/:deviceId" element={<DeviceDetails />} />
     </Routes>
   );
 }
