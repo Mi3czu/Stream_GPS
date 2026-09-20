@@ -10,8 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -27,7 +27,7 @@ jobs:
         working-directory: src/frontend
         run: npm ci && npm run build
       - name: Validate shell scripts
-        run: shellcheck installer/install-device.sh device-agent/stream-gps-device
+        run: docker run --rm -v "$PWD:/mnt" koalaman/shellcheck:stable /mnt/installer/install-device.sh /mnt/device-agent/stream-gps-device
       - name: Test standalone device agent
         run: python3 -m unittest -v tests/test_device_agent.py
       - name: Start disposable application stack
