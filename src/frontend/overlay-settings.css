@@ -15,6 +15,7 @@
 .overlay-settings__preview .leaflet-container { border: 3px solid var(--preview-border); box-sizing: border-box; height: 240px; overflow: hidden; width: 240px; }
 .overlay-settings__preview--round .gps-map, .overlay-settings__preview--round .leaflet-container { border-radius: 50%; }
 .overlay-settings__preview--round .gps-map { overflow: hidden; }
+.overlay-settings__attribution { color: #64748b; display: block; font-size: 10px; margin-top: 5px; }
 .overlay-settings__stats { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .overlay-settings__stats label { align-items: flex-start; display: flex; gap: 8px; }
 .overlay-settings__stats small { color: #64748b; display: block; font-size: 0.75rem; margin-top: 2px; }

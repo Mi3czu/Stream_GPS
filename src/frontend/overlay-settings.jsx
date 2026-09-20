@@ -133,8 +133,10 @@ const OverlaySettings = () => {
             size={240}
             zoomConfig={config}
             zoomControl={false}
+            attributionControl={false}
           />
         </div>
+        <small className="overlay-settings__attribution">{config.mapTheme === 'satellite' ? 'Tiles © Esri' : '© OpenStreetMap contributors'}</small>
       </section>
       <section className="overlay-settings__section">
         <h2>Stats and layout</h2>

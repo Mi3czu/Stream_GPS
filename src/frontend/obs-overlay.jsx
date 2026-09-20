@@ -95,12 +95,9 @@ const ObsOverlay = () => {
     <main className={`obs-overlay obs-overlay--${config.textTheme}`} style={{ '--overlay-text-color': config.textColor, '--overlay-font': config.fontFamily }}>
       {config.statsPosition === 'above-map' && statsPanel}
       <div className={`obs-overlay__map obs-overlay__map--${config.mapShape}`} style={{ '--overlay-size': `${config.mapSize}px`, '--overlay-border': config.borderColor }}>
-        <GpsMap positions={position} mapTheme={config.mapTheme} size={config.mapSize} zoomConfig={config} zoomControl={false} />
+        <GpsMap positions={position} mapTheme={config.mapTheme} size={config.mapSize} zoomConfig={config} zoomControl={false} attributionControl={false} />
       </div>
-      <section className="obs-overlay__info">
-        <strong>{device.name}</strong>
-        <span>{device.speed ?? 0} km/h</span>
-      </section>
+      <small className="obs-overlay__credits">{config.mapTheme === 'satellite' ? 'Tiles © Esri' : <>© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</>}</small>
       {config.statsPosition === 'below-map' && statsPanel}
     </main>
   );

@@ -11,9 +11,7 @@
 .obs-overlay__map .leaflet-container { border: 3px solid var(--overlay-border); box-sizing: border-box; height: var(--overlay-size); overflow: hidden; width: var(--overlay-size); }
 .obs-overlay__map--round .gps-map, .obs-overlay__map--round .leaflet-container { border-radius: 50%; }
 .obs-overlay__map--round .gps-map { overflow: hidden; }
-.obs-overlay__info { border-radius: 10px; display: flex; font: 600 18px var(--overlay-font); gap: 16px; margin: 0 16px; padding: 10px 14px; width: fit-content; }
-.obs-overlay--glass .obs-overlay__info { background: rgba(0, 0, 0, 0.72); backdrop-filter: blur(8px); }
-.obs-overlay--light .obs-overlay__info { background: rgba(255, 255, 255, 0.92); }
-.obs-overlay--dark .obs-overlay__info { background: rgba(0, 0, 0, 0.92); }
+.obs-overlay__credits { background: rgba(0, 0, 0, 0.58); border-radius: 4px; color: #dbe4f0; display: block; font: 10px/1.3 sans-serif; margin: -11px 16px 12px; padding: 2px 5px; width: fit-content; }
+.obs-overlay__credits a { color: inherit; }
 .obs-overlay__stats { background: rgba(0, 0, 0, 0.72); border-radius: 10px; display: flex; flex-wrap: wrap; font: 600 var(--stats-text-size) var(--overlay-font); gap: 8px 14px; margin: 0 16px 12px; padding: 8px 12px; width: fit-content; }
 .obs-overlay__stats strong { opacity: 0.72; }
