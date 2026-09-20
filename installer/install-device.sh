@@ -52,9 +52,11 @@ case "${1:-install}" in
   --backup) backup; exit 0 ;;
   --restore) latest=$(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1); [ -n "$latest" ] || { echo "No backup found"; exit 1; }; restore_path "$latest"; systemctl daemon-reload; systemctl restart stream-gps-device; echo "Restored $latest"; exit 0 ;;
   --uninstall) uninstall; exit 0 ;;
+  --upgrade) [ -f "$CONFIG_DIR/config.json" ] || { echo "No existing configuration found. Run the installer without --upgrade first."; exit 1; }; MODE=upgrade ;;
   install) ;;
-  *) echo "Usage: $0 [install|--dry-run|--status|--test|--backup|--restore|--uninstall]"; exit 2 ;;
+  *) echo "Usage: $0 [install|--upgrade|--dry-run|--status|--test|--backup|--restore|--uninstall]"; exit 2 ;;
 esac
+MODE=${MODE:-install}
 
 command -v python3 >/dev/null || { echo "Installing Python 3..."; apt-get update; apt-get install -y python3; }
 command -v mmcli >/dev/null || { echo "Installing ModemManager..."; apt-get update; apt-get install -y modemmanager; }
@@ -65,13 +67,17 @@ if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -q ':26666 ' && !
 fi
 
 echo "This standalone agent does not modify BelaUI."
-printf "Platform base URL (example https://gps.example.com): "; read -r API_URL
-printf "DEVICE_ID from the Stream GPS Devices page: "; read -r DEVICE_ID
-printf "DEVICE_KEY (input hidden): "; stty -echo; read -r DEVICE_KEY; stty echo; printf '\n'
-printf "Password for local configuration panel (minimum 12 characters, input hidden): "; stty -echo; read -r UI_PASSWORD; stty echo; printf '\n'
-[ "${#UI_PASSWORD}" -ge 12 ] || { echo "Panel password must contain at least 12 characters"; exit 1; }
-[ -n "$API_URL" ] && [ -n "$DEVICE_ID" ] && [ -n "$DEVICE_KEY" ] || { echo "URL, device ID and key are required"; exit 1; }
-case "$API_URL" in http://*|https://*) ;; *) echo "Platform URL must begin with http:// or https://"; exit 1 ;; esac
+if [ "$MODE" = install ]; then
+  printf "Platform base URL (example https://gps.example.com): "; read -r API_URL
+  printf "DEVICE_ID from the Stream GPS Devices page: "; read -r DEVICE_ID
+  printf "DEVICE_KEY (input hidden): "; stty -echo; read -r DEVICE_KEY; stty echo; printf '\n'
+  printf "Password for local configuration panel (minimum 12 characters, input hidden): "; stty -echo; read -r UI_PASSWORD; stty echo; printf '\n'
+  [ "${#UI_PASSWORD}" -ge 12 ] || { echo "Panel password must contain at least 12 characters"; exit 1; }
+  [ -n "$API_URL" ] && [ -n "$DEVICE_ID" ] && [ -n "$DEVICE_KEY" ] || { echo "URL, device ID and key are required"; exit 1; }
+  case "$API_URL" in http://*|https://*) ;; *) echo "Platform URL must begin with http:// or https://"; exit 1 ;; esac
+else
+  echo "Upgrade mode: preserving the existing configuration and queued GPS data."
+fi
 
 backup
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$STATE_DIR"
@@ -86,6 +92,7 @@ install -m 644 "$INSTALL_DIR/stream-gps-device.service" "$SERVICE_FILE"
 install -m 755 "$INSTALL_DIR/stream_gps_agent.py" /usr/local/bin/stream-gps-agent
 install -m 755 "$INSTALL_DIR/stream-gps-device" /usr/local/bin/stream-gps-device
 
+if [ "$MODE" = install ]; then
 python3 - "$CONFIG_DIR/config.json" "$API_URL" "$DEVICE_ID" "$DEVICE_KEY" "$UI_PASSWORD" <<'PY'
 import base64, hashlib, json, os, sys
 path, url, device_id, device_key, password = sys.argv[1:]
@@ -97,6 +104,7 @@ config = {'api_url': url.rstrip('/'), 'device_id': device_id, 'device_key': devi
 with open(path, 'w', encoding='utf-8') as handle: json.dump(config, handle, indent=2); handle.write('\n')
 os.chmod(path, 0o600)
 PY
+fi
 chmod 700 "$CONFIG_DIR" "$STATE_DIR"; chmod 600 "$CONFIG_DIR/config.json"
 systemctl daemon-reload
 if ! systemctl enable --now stream-gps-device; then
@@ -108,5 +116,5 @@ echo "Installation complete."
 echo "Agent version: $(cat "$INSTALL_DIR/VERSION")"
 echo "Configuration panel: http://${IP:-BELABOX-IP}:26666"
 echo "Login name: admin"
-echo "Use the panel password entered during installation."
+[ "$MODE" != install ] || echo "Use the panel password entered during installation."
 echo "Run diagnostics: sudo stream-gps-device test"

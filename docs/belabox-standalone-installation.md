@@ -208,7 +208,15 @@ Informacje o przebiegu lub błędzie aktualizacji można sprawdzić poleceniem:
 sudo journalctl -u 'stream-gps-device-update-*' -n 100 --no-pager
 ```
 
-Pierwsze przejście ze starszej wersji, która nie ma sekcji **Software update**, wykonaj dotychczasową metodą: ponownie pobierz aktualny instalator, obejrzyj zmiany i uruchom go. Aktualizacja BelaUI nie wymaga ponownej instalacji klienta Stream GPS.
+Pierwsze przejście ze starszej wersji, która nie ma sekcji **Software update**, wykonaj jednorazowo tak:
+
+```sh
+curl -fL https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/installer/install-device.sh -o /tmp/install-stream-gps-device.sh
+less /tmp/install-stream-gps-device.sh
+sudo sh /tmp/install-stream-gps-device.sh --upgrade
+```
+
+Tryb `--upgrade` zachowuje konfigurację, hasło panelu, klucz urządzenia oraz kolejkę GPS, dlatego nie prosi ponownie o jednorazowy `DEVICE_KEY`. Aktualizacja BelaUI nie wymaga ponownej instalacji klienta Stream GPS.
 
 ## Najczęstsze problemy
 
