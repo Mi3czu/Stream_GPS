@@ -1,3 +1,10 @@
+.obs-overlay-page,
+.obs-overlay-page body,
+.obs-overlay-page #root {
+  background: transparent !important;
+  min-height: 100%;
+}
+
 .obs-overlay { background: transparent; color: var(--overlay-text-color); margin: 0; min-height: 100vh; overflow: hidden; }
 .obs-overlay__map { height: var(--overlay-size); margin: 16px; width: var(--overlay-size); }
 .obs-overlay__map .gps-map { height: var(--overlay-size); width: var(--overlay-size); }

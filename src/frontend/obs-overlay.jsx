@@ -20,6 +20,15 @@ const ObsOverlay = () => {
   const [, setClockTick] = useState(0);
 
   useEffect(() => {
+    document.documentElement.classList.add('obs-overlay-page');
+    document.body.classList.add('obs-overlay-page');
+    return () => {
+      document.documentElement.classList.remove('obs-overlay-page');
+      document.body.classList.remove('obs-overlay-page');
+    };
+  }, []);
+
+  useEffect(() => {
     const key = searchParams.get('key');
     if (!key) {
       setError('Overlay key is missing.');
