@@ -48,8 +48,8 @@ const MAP_TILES = {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   },
   dark: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri'
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   },
   satellite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -58,7 +58,7 @@ const MAP_TILES = {
 };
 
 export const mapAttributionLabel = (mapTheme) => {
-  if (mapTheme === 'dark') return 'Tiles © Esri';
+  if (mapTheme === 'dark') return '© OpenStreetMap contributors';
   if (mapTheme === 'dark') return '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors';
   if (mapTheme === 'satellite') return 'Tiles © Esri';
   if (mapTheme === 'dark') return '© OpenStreetMap contributors © CARTO';
@@ -71,13 +71,17 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
   ));
   const points = validPositions.map((position) => [Number(position.latitude), Number(position.longitude)]);
   const latestPosition = validPositions[validPositions.length - 1];
-  const tiles = MAP_TILES[mapTheme] || MAP_TILES.standard;
+  // Legacy CARTO/Esri dark selections are retained in saved overlays, but use
+  // the dependable Night rendering until a configured API-backed provider is
+  // introduced.
+  const effectiveTheme = mapTheme === 'dark' ? 'night' : mapTheme;
+  const tiles = MAP_TILES[effectiveTheme] || MAP_TILES.standard;
 
   return (
     <div className="gps-map" style={size ? { '--gps-map-size': `${size}px` } : undefined} aria-label="GPS map">
       <MapContainer
         center={points[0] || DEFAULT_CENTER}
-        className={mapTheme === 'night' ? 'gps-map__leaflet--night' : ''}
+        className={effectiveTheme === 'night' ? 'gps-map__leaflet--night' : ''}
         zoom={points.length ? 14 : 6}
         zoomControl={zoomControl}
         attributionControl={attributionControl}

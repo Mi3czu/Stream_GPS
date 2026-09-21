@@ -5,7 +5,7 @@ import './overlay-settings.css';
 import GpsMap, { mapAttributionLabel } from './gps-map.jsx';
 
 const OPTIONS = {
-  mapTheme: [['standard', 'Standard'], ['dark', 'Dark (Esri)'], ['satellite', 'Satellite'], ['night', 'Night (OSM filter)']],
+  mapTheme: [['standard', 'Standard'], ['satellite', 'Satellite'], ['night', 'Night (OSM filter)']],
   textTheme: [['glass', 'Glass'], ['light', 'Light'], ['dark', 'Dark']],
   fontFamily: [['monospace', 'Standard (mono)'], ['Arial, sans-serif', 'Arial'], ['Roboto, sans-serif', 'Roboto'], ['Inter, sans-serif', 'Inter'], ['Oswald, sans-serif', 'Oswald']],
   mapShape: [['round', 'Round'], ['square', 'Square']]
@@ -38,8 +38,11 @@ const OverlaySettings = () => {
     axios.get(`/api/v1/overlays/${encodeURIComponent(overlayId)}`, { headers: { Authorization: `Bearer ${token}` } })
       .then((response) => {
         if (response.data.overlay.device_id !== deviceId) return navigate('/devices', { replace: true });
+        const savedConfig = response.data.overlay.config;
+        // Remove the retired dark-provider selection as soon as this overlay
+        // is edited; rendering already falls back safely for OBS meanwhile.
         setOverlay(response.data.overlay);
-        setConfig(response.data.overlay.config);
+        setConfig(savedConfig.mapTheme === 'dark' ? { ...savedConfig, mapTheme: 'night' } : savedConfig);
       })
       .catch((requestError) => setError(requestError.response?.data?.message || requestError.message));
   }, [deviceId, navigate, overlayId]);
