@@ -47,13 +47,23 @@ const MAP_TILES = {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   },
+  dark: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  },
   satellite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Tiles &copy; Esri'
   }
 };
 
-const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, zoomControl = true, attributionControl = true }) => {
+export const mapAttributionLabel = (mapTheme) => {
+  if (mapTheme === 'satellite') return 'Tiles © Esri';
+  if (mapTheme === 'dark') return '© OpenStreetMap contributors © CARTO';
+  return '© OpenStreetMap contributors';
+};
+
+const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, zoomControl = true, attributionControl = true, mapOpacity = 100 }) => {
   const validPositions = positions.filter((position) => (
     Number.isFinite(Number(position.latitude)) && Number.isFinite(Number(position.longitude))
   ));
@@ -65,7 +75,7 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
     <div className="gps-map" style={size ? { '--gps-map-size': `${size}px` } : undefined} aria-label="GPS map">
       <MapContainer
         center={points[0] || DEFAULT_CENTER}
-        className={mapTheme === 'night' || mapTheme === 'dark' ? 'gps-map__leaflet--dark' : ''}
+        className={mapTheme === 'night' ? 'gps-map__leaflet--night' : ''}
         zoom={points.length ? 14 : 6}
         zoomControl={zoomControl}
         attributionControl={attributionControl}
@@ -73,6 +83,7 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
       >
         <TileLayer
           attribution={tiles.attribution}
+          opacity={Math.max(0.1, Math.min(1, Number(mapOpacity) / 100))}
           url={tiles.url}
         />
         <MapViewport points={points} speed={latestPosition?.speed} zoomConfig={zoomConfig} />

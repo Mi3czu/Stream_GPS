@@ -43,6 +43,12 @@ def main():
     request('POST', '/api/v1/gps/update', position, headers=gps_headers, expected=409)
     overlay_created = request('POST', f'/api/v1/devices/{device_id}/overlays', {'name': 'CI overlay'}, owner, expected=201)
     overlay_id, overlay_key = overlay_created['overlay']['id'], overlay_created['access_key']
+    overlay_config = request('GET', f'/api/v1/overlays/{overlay_id}', token=owner)['overlay']['config']
+    overlay_config.update(mapTheme='dark', mapOpacity=55)
+    saved_overlay = request('PATCH', f'/api/v1/overlays/{overlay_id}', {'config': overlay_config}, owner)['overlay']
+    assert saved_overlay['config']['mapTheme'] == 'dark' and saved_overlay['config']['mapOpacity'] == 55
+    overlay_config['mapOpacity'] = 5
+    request('PATCH', f'/api/v1/overlays/{overlay_id}', {'config': overlay_config}, owner, expected=400)
     credentials = request('GET', f'/api/v1/devices/{device_id}/credentials', token=owner)
     assert credentials['overlays'][0]['access_key'] == overlay_key
     request('GET', f'/api/v1/overlays/{overlay_id}/data?key={overlay_key}')

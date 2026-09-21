@@ -2,10 +2,10 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import './overlay-settings.css';
-import GpsMap from './gps-map.jsx';
+import GpsMap, { mapAttributionLabel } from './gps-map.jsx';
 
 const OPTIONS = {
-  mapTheme: [['standard', 'Standard'], ['satellite', 'Satellite'], ['night', 'Night (OSM filter)']],
+  mapTheme: [['standard', 'Standard'], ['dark', 'Dark (CARTO)'], ['satellite', 'Satellite'], ['night', 'Night (OSM filter)']],
   textTheme: [['glass', 'Glass'], ['light', 'Light'], ['dark', 'Dark']],
   fontFamily: [['monospace', 'Standard (mono)'], ['Arial, sans-serif', 'Arial'], ['Roboto, sans-serif', 'Roboto'], ['Inter, sans-serif', 'Inter'], ['Oswald, sans-serif', 'Oswald']],
   mapShape: [['round', 'Round'], ['square', 'Square']]
@@ -98,6 +98,11 @@ const OverlaySettings = () => {
         <input type="range" min="200" max="600" step="10" value={config.mapSize} onChange={(event) => update('mapSize', Number(event.target.value))} />
       </section>
       <section className="overlay-settings__section">
+        <h2>Map opacity: {config.mapOpacity}%</h2>
+        <input type="range" min="10" max="100" step="5" value={config.mapOpacity} onChange={(event) => update('mapOpacity', Number(event.target.value))} />
+        <p className="overlay-settings__hint">Only map tiles become transparent. The location marker, border and statistics remain clear in OBS.</p>
+      </section>
+      <section className="overlay-settings__section">
         <h2>Border color</h2>
         <input aria-label="Border color" type="color" value={config.borderColor} onChange={(event) => update('borderColor', event.target.value)} />
       </section>
@@ -134,8 +139,9 @@ const OverlaySettings = () => {
             zoomConfig={config}
             zoomControl={false}
             attributionControl={false}
+            mapOpacity={config.mapOpacity}
           />
-          <small className="overlay-settings__attribution">{config.mapTheme === 'satellite' ? 'Tiles © Esri' : '© OpenStreetMap contributors'}</small>
+          <small className="overlay-settings__attribution">{mapAttributionLabel(config.mapTheme)}</small>
         </div>
       </section>
       <section className="overlay-settings__section">

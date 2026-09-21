@@ -77,6 +77,7 @@ const DEFAULT_OVERLAY_CONFIG = {
   fontFamily: 'monospace',
   mapShape: 'round',
   mapSize: 360,
+  mapOpacity: 100,
   borderColor: '#ffffff',
   autoZoom: true,
   minSpeed: 0,
@@ -108,8 +109,7 @@ function normalizeOverlayConfig(input) {
 
 function validateOverlayConfig(input) {
   const config = normalizeOverlayConfig(input);
-  if (config.mapTheme === 'dark') config.mapTheme = 'night';
-  const mapThemes = new Set(['standard', 'night', 'satellite']);
+  const mapThemes = new Set(['standard', 'night', 'dark', 'satellite']);
   const textThemes = new Set(['glass', 'light', 'dark']);
   const fonts = new Set(['monospace', 'Arial, sans-serif', 'Roboto, sans-serif', 'Inter, sans-serif', 'Oswald, sans-serif']);
   const color = /^#[0-9a-fA-F]{6}$/;
@@ -118,10 +118,12 @@ function validateOverlayConfig(input) {
   const maxSpeed = Number(config.maxSpeed);
   const maxZoom = Number(config.maxZoom);
   const minZoom = Number(config.minZoom);
+  const mapOpacity = Number(config.mapOpacity);
   if (!mapThemes.has(config.mapTheme) || !textThemes.has(config.textTheme) ||
       !fonts.has(config.fontFamily) || !['round', 'square'].includes(config.mapShape) ||
       !color.test(config.textColor) || !color.test(config.borderColor) ||
-      !Number.isInteger(Number(config.mapSize)) || Number(config.mapSize) < 200 || Number(config.mapSize) > 600) {
+      !Number.isInteger(Number(config.mapSize)) || Number(config.mapSize) < 200 || Number(config.mapSize) > 600 ||
+      !Number.isInteger(mapOpacity) || mapOpacity < 10 || mapOpacity > 100) {
     return null;
   }
   if (typeof config.autoZoom !== 'boolean' || !Number.isInteger(minSpeed) || !Number.isInteger(maxSpeed) ||
@@ -131,7 +133,7 @@ function validateOverlayConfig(input) {
   if (!statNames.every((name) => typeof config.stats[name] === 'boolean') ||
       !['above-map', 'below-map'].includes(config.statsPosition) ||
       !Number.isInteger(Number(config.statsTextSize)) || Number(config.statsTextSize) < 10 || Number(config.statsTextSize) > 28) return null;
-  return { ...config, mapSize: Number(config.mapSize), minSpeed, maxSpeed, minZoom, maxZoom, statsTextSize: Number(config.statsTextSize) };
+  return { ...config, mapSize: Number(config.mapSize), mapOpacity, minSpeed, maxSpeed, minZoom, maxZoom, statsTextSize: Number(config.statsTextSize) };
 }
 
 function writeSse(response, event, data) {

@@ -10,7 +10,7 @@ Stream GPS receives GPS telemetry from registered devices, stores it in PostgreS
 - Live SSE device map, route statistics, history range, CSV/GPX export, deletion and configurable retention.
 - Standalone Belabox device agent with its own password-protected web panel on port 26666, offline queue and diagnostics; no BelaUI patching.
 - Optional public viewer map with a locally generated QR code, owner-controlled sharing switch and revocable link; GPS history stays private.
-- OBS Browser Source overlay with live SSE updates, speed-aware zoom, configurable map/text styling and GPS/session statistics.
+- OBS Browser Source overlay with live SSE updates, speed-aware zoom, CARTO Dark Matter/standard/satellite map themes, adjustable tile opacity, configurable text styling and GPS/session statistics.
 - Docker deployment with PostgreSQL, database migrations, Express API, React frontend and Caddy reverse proxy.
 
 ## Local development
@@ -116,6 +116,6 @@ Follow the complete beginner-friendly guide in [docs/belabox-standalone-installa
 ## Security notes
 
 - Never commit `.env`, device keys, overlay URLs or database dumps.
-- A device key and an OBS overlay URL are displayed only once.
+- Device and overlay keys are available to their authenticated owner through the encrypted credential vault; protect the account and keep `JWT_SECRET` stable.
 - Replacing a GPS key immediately invalidates the former key.
 - Revoke an overlay when its Browser Source URL is no longer needed.

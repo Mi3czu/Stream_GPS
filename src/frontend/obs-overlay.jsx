@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useParams, useSearchParams } from 'react-router-dom';
-import GpsMap from './gps-map.jsx';
+import GpsMap, { mapAttributionLabel } from './gps-map.jsx';
 import './obs-overlay.css';
 
 const compassDirection = (heading) => {
@@ -95,8 +95,8 @@ const ObsOverlay = () => {
     <main className={`obs-overlay obs-overlay--${config.textTheme}`} style={{ '--overlay-text-color': config.textColor, '--overlay-font': config.fontFamily }}>
       {config.statsPosition === 'above-map' && statsPanel}
       <div className={`obs-overlay__map obs-overlay__map--${config.mapShape}`} style={{ '--overlay-size': `${config.mapSize}px`, '--overlay-border': config.borderColor }}>
-        <GpsMap positions={position} mapTheme={config.mapTheme} size={config.mapSize} zoomConfig={config} zoomControl={false} attributionControl={false} />
-        <small className="obs-overlay__credits">{config.mapTheme === 'satellite' ? 'Tiles © Esri' : <>© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors</>}</small>
+        <GpsMap positions={position} mapTheme={config.mapTheme} size={config.mapSize} zoomConfig={config} zoomControl={false} attributionControl={false} mapOpacity={config.mapOpacity} />
+        <small className="obs-overlay__credits">{mapAttributionLabel(config.mapTheme)}</small>
       </div>
       {config.statsPosition === 'below-map' && statsPanel}
     </main>
