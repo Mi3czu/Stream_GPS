@@ -78,14 +78,14 @@ def update_download_size(base):
     sizes = [remote_size(base + '/' + name) for name in names]
     return sum(sizes) if all(size is not None for size in sizes) else None
 
-def check_update(config=None):
+def check_update(config=None, include_download_size=True):
     base = update_base(config)
     available = download(base + '/VERSION').decode('utf-8').strip()
     version_tuple(available)
     installed = current_version()
     update_available = version_tuple(available) > version_tuple(installed)
     return {'installed': installed, 'available': available, 'update_available': update_available,
-            'download_bytes': update_download_size(base) if update_available else None}
+            'download_bytes': update_download_size(base) if update_available and include_download_size else None}
 
 def apply_update():
     save_update_status('downloading')
@@ -97,7 +97,7 @@ def apply_update():
     save_update_status('succeeded', version=version or current_version())
 
 def _apply_update():
-    config = load_config(); base = update_base(config); release = check_update(config)
+    config = load_config(); base = update_base(config); release = check_update(config, include_download_size=False)
     if not release['update_available']:
         print('No update available'); return
     names = UPDATE_FILES
@@ -522,7 +522,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not release['update_available']: self.respond_error(409, 'No update is available.'); return
                 save_update_status('scheduled', version=release['available'])
                 unit = 'stream-gps-device-update-' + str(int(time.time()))
-                result = run('systemd-run', '--unit=' + unit, '--collect', '/usr/bin/python3', str(Path(__file__).resolve()), 'apply-update')
+                result = run('systemd-run', '--unit=' + unit, '--collect', '--property=TimeoutStartSec=5min', '/usr/bin/python3', str(Path(__file__).resolve()), 'apply-update')
                 if result.returncode: raise RuntimeError(result.stderr.strip() or 'Unable to schedule updater')
                 self.respond(202, '''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="refresh" content="20;url=/"><title>Updating Stream GPS Device</title><style>body{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:680px;margin:60px auto;padding:20px}a{color:#79b8ff}</style></head><body><h1>Update in progress</h1><p>The update is downloading and the agent will restart. The dashboard will show whether it completed successfully or failed.</p><p>Returning to the dashboard in <b id="countdown">20</b> seconds.</p><p><a href="/">Return now</a></p><script>let remaining=20;const timer=setInterval(()=>{remaining-=1;document.getElementById('countdown').textContent=remaining;if(remaining<=0){clearInterval(timer);location.replace('/')}},1000)</script></body></html>''')
             except Exception as error:
