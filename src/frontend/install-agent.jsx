@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 const installScriptUrl = 'https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/installer/install-device.sh';
+const quickInstallCommand = `curl -fsSL ${installScriptUrl} -o /tmp/install-stream-gps-device.sh && sudo sh /tmp/install-stream-gps-device.sh`;
 
 const CopyCommand = ({ children, label = 'Copy' }) => {
   const [copied, setCopied] = useState(false);
@@ -46,7 +47,7 @@ const InstallAgent = () => {
 
         <article className="panel install-step">
           <span className="install-step__number">3</span>
-          <div><h2>Download and run the installer</h2><p>Run these commands on the BelaBox. You can inspect the downloaded script before executing it.</p><CopyCommand>{`curl -fL ${installScriptUrl} -o /tmp/install-stream-gps-device.sh`}</CopyCommand><CopyCommand>{'less /tmp/install-stream-gps-device.sh'}</CopyCommand><CopyCommand>{'sudo sh /tmp/install-stream-gps-device.sh'}</CopyCommand></div>
+          <div><h2>Install the agent</h2><p>Use Quick setup unless you want to review the installer source first. Neither option asks for your Stream GPS device key in SSH.</p><div className="install-option install-option--recommended"><div><strong>Quick setup</strong><span>Recommended — copy one command into the BelaBox SSH terminal.</span></div><CopyCommand>{quickInstallCommand}</CopyCommand></div><details className="install-option install-option--manual"><summary><strong>Manual installation</strong><span>Download first and optionally inspect the script before running it.</span></summary><div className="install-option__content"><CopyCommand>{`curl -fL ${installScriptUrl} -o /tmp/install-stream-gps-device.sh`}</CopyCommand><p className="panel__hint">Optional: <code>less /tmp/install-stream-gps-device.sh</code> displays the downloaded source code. Press <kbd>q</kbd> to return to the terminal.</p><CopyCommand>{'sudo sh /tmp/install-stream-gps-device.sh'}</CopyCommand></div></details></div>
         </article>
 
         <article className="panel install-step">

@@ -43,21 +43,33 @@ sudo mmcli -K -m 0 --location-get
 
 Jeśli numer modemu jest inny niż `0`, użyj numeru pokazanego przez `mmcli -L`. Poprawny fix zawiera `modem.location.gps.latitude` i `modem.location.gps.longitude`.
 
-## 3. Instalacja zalecana — pobranie pliku i sprawdzenie go
+## 3. Instalacja zalecana — szybka
 
-Pobierz instalator do pliku:
+Połącz się z Belaboxem przez SSH i wklej jedną komendę:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/installer/install-device.sh -o /tmp/install-stream-gps-device.sh && sudo sh /tmp/install-stream-gps-device.sh
+```
+
+Instalator zapyta tylko o hasło do lokalnego panelu. Nie wpisujesz w SSH adresu platformy, `DEVICE_ID` ani `DEVICE_KEY`.
+
+### Wariant ręczny — dla osób chcących sprawdzić instalator
+
+Pobierz plik:
 
 ```sh
 curl -fL https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/installer/install-device.sh -o /tmp/install-stream-gps-device.sh
 ```
 
-Obejrzyj go przed wykonaniem:
+Opcjonalnie obejrzyj kod skryptu:
 
 ```sh
 less /tmp/install-stream-gps-device.sh
 ```
 
-Uruchom:
+`less` wyświetla zawartość pobranego pliku; aby wrócić do terminala, naciśnij `q`.
+
+Uruchom instalator:
 
 ```sh
 sudo sh /tmp/install-stream-gps-device.sh
