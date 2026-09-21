@@ -80,6 +80,7 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
   return (
     <div className="gps-map" style={size ? { '--gps-map-size': `${size}px` } : undefined} aria-label="GPS map">
       <MapContainer
+        key={effectiveTheme}
         center={points[0] || DEFAULT_CENTER}
         className={effectiveTheme === 'night' ? 'gps-map__leaflet--night' : ''}
         zoom={points.length ? 14 : 6}
