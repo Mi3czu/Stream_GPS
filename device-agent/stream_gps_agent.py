@@ -11,6 +11,7 @@ STATE_DIR = QUEUE_PATH.parent
 STATUS = {'started_at': time.time(), 'modem': None, 'modem_info': {}, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0}
 LOCK = threading.Lock()
 DEFAULT_UPDATE_BASE = 'https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/device-agent'
+UPDATE_FILES = ('stream_gps_agent.py', 'stream-gps-device', 'stream-gps-device.service', 'VERSION')
 CPU_SAMPLE = None
 
 def load_config():
@@ -42,17 +43,37 @@ def download(url, timeout=20):
     request = urllib.request.Request(url, headers={'User-Agent': 'Stream-GPS-Device-Updater/1.0'})
     with urllib.request.urlopen(request, timeout=timeout) as response: return response.read()
 
+def remote_size(url, timeout=20):
+    request = urllib.request.Request(url, headers={'User-Agent': 'Stream-GPS-Device-Updater/1.0'}, method='HEAD')
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            length = response.headers.get('Content-Length')
+            return int(length) if length and int(length) >= 0 else None
+    except (OSError, ValueError, urllib.error.URLError):
+        return None
+
+def update_download_size(base):
+    # The install action re-checks VERSION, then fetches the manifest and all
+    # release files. HEAD requests below obtain their sizes without downloading
+    # their contents.
+    names = ('VERSION', 'checksums.sha256', *UPDATE_FILES)
+    sizes = [remote_size(base + '/' + name) for name in names]
+    return sum(sizes) if all(size is not None for size in sizes) else None
+
 def check_update(config=None):
-    available = download(update_base(config) + '/VERSION').decode('utf-8').strip()
+    base = update_base(config)
+    available = download(base + '/VERSION').decode('utf-8').strip()
     version_tuple(available)
     installed = current_version()
-    return {'installed': installed, 'available': available, 'update_available': version_tuple(available) > version_tuple(installed)}
+    update_available = version_tuple(available) > version_tuple(installed)
+    return {'installed': installed, 'available': available, 'update_available': update_available,
+            'download_bytes': update_download_size(base) if update_available else None}
 
 def apply_update():
     config = load_config(); base = update_base(config); release = check_update(config)
     if not release['update_available']:
         print('No update available'); return
-    names = ['stream_gps_agent.py', 'stream-gps-device', 'stream-gps-device.service', 'VERSION']
+    names = UPDATE_FILES
     install_dir = Path('/opt/stream-gps-device'); backup = Path('/var/backups/stream-gps-device') / ('auto-update-' + time.strftime('%Y%m%d-%H%M%S'))
     with tempfile.TemporaryDirectory(prefix='.update-', dir=install_dir) as directory:
         staging = Path(directory); manifest_bytes = download(base + '/checksums.sha256'); (staging / 'checksums.sha256').write_bytes(manifest_bytes)
@@ -389,7 +410,15 @@ class Handler(BaseHTTPRequestHandler):
         sharing_text = '<b class="good">enabled</b>' if sharing_enabled else '<b class="warn">disabled</b>'
         if sharing_error: sharing_text = '<b class="bad">unavailable</b> <code>' + html.escape(sharing_error) + '</code>'
         sharing_form = '' if sharing_error else f'<form method="post" action="/toggle-public-sharing"><input type="hidden" name="csrf" value="{self.csrf}"><input type="hidden" name="enabled" value="{str(not sharing_enabled).lower()}"><button class="{"secondary" if sharing_enabled else ""}">{"Stop sharing" if sharing_enabled else "Start sharing"}</button></form>'
-        update_text = '' if not update else (f"<p>Available version: <b>{html.escape(update['available'])}</b></p>" + (f'<form method="post" action="/install-update"><input type="hidden" name="csrf" value="{self.csrf}"><button>Install update</button></form>' if update['update_available'] else '<p class="good">You are up to date.</p>'))
+        if not update:
+            update_text = ''
+        elif update['update_available']:
+            download_size = format_bytes(update.get('download_bytes'))
+            update_text = (f"<p>Available version: <b>{html.escape(update['available'])}</b>"
+                           f"<br><small>Download: <b>{html.escape(download_size)}</b> (agent files and verification manifest)</small></p>"
+                           f'<form method="post" action="/install-update"><input type="hidden" name="csrf" value="{self.csrf}"><button>Install update</button></form>')
+        else:
+            update_text = '<p class="good">You are up to date.</p>'
         def metric(label, value, hint): return f'<div class="metric"><span>{html.escape(label)}</span><b>{html.escape(value)}</b><small>{html.escape(hint)}</small></div>'
         system_cards = ''.join((
             metric('CPU', f'{metrics["cpu"]}%' if metrics['cpu'] is not None else 'Measuring…', 'current usage'),
