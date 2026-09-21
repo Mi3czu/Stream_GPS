@@ -47,6 +47,10 @@ const MAP_TILES = {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   },
+  mono: {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  },
   dark: {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -76,13 +80,16 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
   // introduced.
   const effectiveTheme = mapTheme === 'dark' ? 'night' : mapTheme;
   const tiles = MAP_TILES[effectiveTheme] || MAP_TILES.standard;
+  const mapClass = effectiveTheme === 'night'
+    ? 'gps-map__leaflet--night'
+    : effectiveTheme === 'mono' ? 'gps-map__leaflet--mono' : '';
 
   return (
     <div className="gps-map" style={size ? { '--gps-map-size': `${size}px` } : undefined} aria-label="GPS map">
       <MapContainer
         key={effectiveTheme}
         center={points[0] || DEFAULT_CENTER}
-        className={effectiveTheme === 'night' ? 'gps-map__leaflet--night' : ''}
+        className={mapClass}
         zoom={points.length ? 14 : 6}
         zoomControl={zoomControl}
         attributionControl={attributionControl}

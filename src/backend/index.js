@@ -285,7 +285,7 @@ function normalizeOverlayConfig(input) {
 
 function validateOverlayConfig(input) {
   const config = normalizeOverlayConfig(input);
-  const mapThemes = new Set(['standard', 'night', 'dark', 'satellite']);
+  const mapThemes = new Set(['standard', 'night', 'mono', 'dark', 'satellite']);
   const textThemes = new Set(['glass', 'light', 'dark']);
   const fonts = new Set(['monospace', 'Arial, sans-serif', 'Roboto, sans-serif', 'Inter, sans-serif', 'Oswald, sans-serif']);
   const color = /^#[0-9a-fA-F]{6}$/;
