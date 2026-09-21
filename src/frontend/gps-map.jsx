@@ -48,10 +48,10 @@ const MAP_TILES = {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   },
   dark: {
-    // Keep this on the legacy raster endpoint. It is a public CARTO basemap,
-    // unlike CARTO's newer API endpoints, which return "API KEY REQUIRED"
-    // when called without a project token.
-    url: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+    // Browser requests go through our cacheable proxy. Some client networks
+    // receive an "API KEY REQUIRED" image from CARTO's legacy public endpoint
+    // even though the tile is available server-to-server.
+    url: '/api/v1/map-tiles/carto/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
   },
   satellite: {

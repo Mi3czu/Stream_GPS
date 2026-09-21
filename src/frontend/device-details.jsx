@@ -12,6 +12,16 @@ const distanceMeters = (a, b) => {
   return 6371000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 };
 
+const CollapsiblePanel = ({ title, hint, badge, defaultOpen = false, className = '', children }) => (
+  <details className={`panel collapsible-panel ${className}`.trim()} open={defaultOpen}>
+    <summary className="collapsible-panel__summary">
+      <div><h2>{title}</h2>{hint && <p>{hint}</p>}</div>
+      <div className="collapsible-panel__meta">{badge}</div>
+    </summary>
+    <div className="collapsible-panel__content">{children}</div>
+  </details>
+);
+
 const DeviceDetails = () => {
   const { deviceId } = useParams();
   const navigate = useNavigate();
@@ -207,21 +217,21 @@ const DeviceDetails = () => {
         <article className="stat-card"><span className="stat-card__label">Average speed</span><span className="stat-card__value">{stats.avgSpeed?.toFixed(1) ?? '—'}<small> km/h</small></span></article>
         <article className="stat-card"><span className="stat-card__label">Maximum speed</span><span className="stat-card__value">{stats.maxSpeed?.toFixed(1) ?? '—'}<small> km/h</small></span></article>
       </section>
-      <section className="panel"><div className="panel__header"><h2>Live position and route</h2><span>{positions.length} points</span></div><GpsMap positions={positions.length ? positions : (device.last_latitude === null ? [] : [{ latitude: device.last_latitude, longitude: device.last_longitude, speed: device.last_speed, recorded_at: device.last_recorded_at }])} /></section>
-      <section className="panel"><div className="panel__header"><h2>GPS details</h2></div><div className="device-card__metrics">
+      <CollapsiblePanel title="Live position and route" badge={`${positions.length} points`} defaultOpen><GpsMap positions={positions.length ? positions : (device.last_latitude === null ? [] : [{ latitude: device.last_latitude, longitude: device.last_longitude, speed: device.last_speed, recorded_at: device.last_recorded_at }])} /></CollapsiblePanel>
+      <CollapsiblePanel title="GPS details" hint="Latest position data received from this device."><div className="device-card__metrics">
         <span className="metric">Coordinates<strong>{device.last_latitude === null ? 'No GPS fix' : `${device.last_latitude}, ${device.last_longitude}`}</strong></span><span className="metric">Altitude<strong>{device.last_altitude ?? '—'} m</strong></span><span className="metric">Heading<strong>{device.last_heading ?? '—'}°</strong></span><span className="metric">Accuracy<strong>{device.last_accuracy ?? '—'} m</strong></span><span className="metric">Satellites<strong>{device.last_satellites ?? '—'}</strong></span><span className="metric">GPS time<strong>{device.last_recorded_at ? new Date(device.last_recorded_at).toLocaleString() : '—'}</strong></span>
-      </div></section>
-      <section className="panel"><div className="panel__header"><h2>History and export</h2></div><div className="toolbar"><select value={rangeHours} onChange={(event) => setRangeHours(event.target.value)}><option value="1">Last hour</option><option value="6">Last 6 hours</option><option value="24">Last 24 hours</option><option value="168">Last 7 days</option><option value="all">All saved points</option></select><button onClick={() => exportHistory('csv')}>Export CSV</button><button onClick={() => exportHistory('gpx')}>Export GPX</button><button className="button--danger" onClick={deleteHistory}>Delete history</button></div></section>
-      <section className="panel"><div className="panel__header"><div><h2>Your keys</h2><p className="panel__hint">Secrets are available only to the device owner and are never included in public links.</p></div></div>
+      </div></CollapsiblePanel>
+      <CollapsiblePanel title="History and export" hint="Download or permanently remove saved GPS records."><div className="toolbar"><select value={rangeHours} onChange={(event) => setRangeHours(event.target.value)}><option value="1">Last hour</option><option value="6">Last 6 hours</option><option value="24">Last 24 hours</option><option value="168">Last 7 days</option><option value="all">All saved points</option></select><button onClick={() => exportHistory('csv')}>Export CSV</button><button onClick={() => exportHistory('gpx')}>Export GPX</button><button className="button--danger" onClick={deleteHistory}>Delete history</button></div></CollapsiblePanel>
+      <CollapsiblePanel title="Your keys" hint="Secrets are visible only to the device owner and never appear in public links.">
         <div className="key-list"><div className="key-row"><label>Push key <small>for the GPS device</small></label>{credentials.device_key ? <div className="key-field"><input readOnly type={visibleKeys.device ? 'text' : 'password'} value={credentials.device_key} /><button className="button--secondary" onClick={() => setVisibleKeys((current) => ({ ...current, device: !current.device }))}>{visibleKeys.device ? 'Hide' : 'Show'}</button><button onClick={() => navigator.clipboard.writeText(credentials.device_key)}>Copy</button></div> : <p className="panel__hint">Waiting for the existing GPS device to authenticate. Refresh after its next upload; replace the GPS key only if the original configuration is no longer available.</p>}</div>
           {credentials.overlays.map((credential) => <div className="key-row" key={credential.id}><label>Pull key — {credential.name} <small>{credential.status}</small></label>{credential.status !== 'active' ? <p className="panel__hint">This overlay is disabled. Delete it below when it is no longer needed.</p> : credential.access_key ? <div className="key-field"><input readOnly type={visibleKeys[credential.id] ? 'text' : 'password'} value={credential.access_key} /><button className="button--secondary" onClick={() => setVisibleKeys((current) => ({ ...current, [credential.id]: !current[credential.id] }))}>{visibleKeys[credential.id] ? 'Hide' : 'Show'}</button><button onClick={() => navigator.clipboard.writeText(credential.access_key)}>Copy</button></div> : <div><p className="panel__hint">Open the existing OBS URL once and refresh this page to import its key, or replace the pull key now.</p><button className="button--secondary" onClick={() => replaceOverlayKey(credential.id)}>Replace pull key</button></div>}</div>)}
           {!credentials.overlays.length && <p className="panel__hint">Create an OBS overlay to issue a pull key.</p>}
         </div>
-      </section>
-      <section className="panel"><div className="panel__header"><div><h2>Viewer map</h2><p className="panel__hint">Share only your current position. Saved route history remains private.</p></div><span className={`status-pill ${device.public_share_enabled ? 'status-pill--online' : 'status-pill--offline'}`}>{device.public_share_enabled ? 'sharing on' : 'sharing off'}</span></div>
+      </CollapsiblePanel>
+      <CollapsiblePanel title="Viewer map" hint="Share only your current position. Saved route history remains private." badge={<span className={`status-pill ${device.public_share_enabled ? 'status-pill--online' : 'status-pill--offline'}`}>{device.public_share_enabled ? 'sharing on' : 'sharing off'}</span>}>
         <div className="sharing-actions"><button onClick={() => updatePublicSharing(!device.public_share_enabled)} className={device.public_share_enabled ? 'button--danger' : ''}>{device.public_share_enabled ? 'Stop sharing' : 'Start sharing'}</button>{device.public_share_id && <button className="button--secondary" onClick={regeneratePublicLink}>Regenerate link</button>}</div>
         {publicMapUrl && <div className="share-link"><div><strong>Public viewer link</strong><code>{publicMapUrl}</code><div className="sharing-actions"><button onClick={() => navigator.clipboard.writeText(publicMapUrl)}>Copy link</button><a className="button button--secondary" href={publicMapUrl} target="_blank" rel="noreferrer">Open preview</a></div>{!device.public_share_enabled && <p className="panel__hint">This link is currently disabled and exposes no location. Starting sharing will reactivate it.</p>}</div>{device.public_share_enabled && <div className="share-qr"><QRCodeSVG value={publicMapUrl} size={150} level="M" title="QR code for the public viewer map" /></div>}</div>}
-      </section>
+      </CollapsiblePanel>
       <details className="panel chat-commands-panel">
         <summary className="chat-commands-panel__summary">
           <div><h2>Chat command automation</h2><p>Configure which chat actions can control this device.</p></div>
@@ -237,7 +247,8 @@ const DeviceDetails = () => {
           </article>)}</div>
         </div>
       </details>
-      <section className="panel"><div className="panel__header"><h2>OBS overlays</h2><button onClick={createOverlay}>Create overlay</button></div>
+      <CollapsiblePanel title="OBS overlays" hint="Create and manage browser-source overlays for this device." badge={`${overlays.length} total`}>
+        <div className="panel__header"><h2>Available overlays</h2><button onClick={createOverlay}>Create overlay</button></div>
         {overlayResult && <div className="alert alert--success"><strong>OBS URL created:</strong><br /><code>{`${window.location.origin}${overlayResult.overlay_path}`}</code></div>}
         <div className="device-list">{overlays.map((overlay) => {
           const pullKey = credentials.overlays.find((item) => item.id === overlay.id)?.access_key;
@@ -248,8 +259,8 @@ const DeviceDetails = () => {
             {overlay.status === 'active' && !obsUrl && <p className="panel__hint">Import or replace the pull key in Your keys to generate the complete OBS link.</p>}
             <div className="device-card__actions">{overlay.status === 'active' && <button onClick={() => navigate(`/devices/${encodeURIComponent(deviceId)}/overlays/${encodeURIComponent(overlay.id)}`)}>Configure</button>}{overlay.status === 'active' && <button className="button--secondary" onClick={() => setOverlayVisibility(overlay.id, overlay.visible === false)}> {overlay.visible === false ? 'Show in OBS' : 'Hide in OBS'}</button>}{overlay.status === 'active' && <button className="button--secondary" onClick={() => replaceOverlayKey(overlay.id)}>Replace pull key</button>}{overlay.status === 'active' && <button className="button--secondary" onClick={() => revokeOverlay(overlay.id)}>Disable</button>}<button className="button--danger" onClick={() => deleteOverlay(overlay.id)}>Delete</button></div></article>;
         })}{!overlays.length && <p>No overlays created.</p>}</div>
-      </section>
-      <section className="panel danger-zone"><h2>Danger zone</h2><p>Permanently removes this device, all positions, sessions and overlay configuration.</p><button className="button--danger" onClick={deleteDevice}>Delete device permanently</button></section>
+      </CollapsiblePanel>
+      <CollapsiblePanel title="Danger zone" hint="Permanently removes this device, history, sessions and overlay configuration." className="danger-zone"><button className="button--danger" onClick={deleteDevice}>Delete device permanently</button></CollapsiblePanel>
     </>}
   </main>;
 };
