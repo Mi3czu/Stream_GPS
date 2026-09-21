@@ -52,6 +52,7 @@ const AppShell = () => {
         <nav className="sidebar__nav" aria-label="Main navigation">
           <NavLink to="/dashboard" onClick={closeMenu}>Dashboard</NavLink>
           <NavLink to="/devices" onClick={closeMenu}>Devices</NavLink>
+          <NavLink to="/install-agent" onClick={closeMenu}>Install agent</NavLink>
           <NavLink to="/account" onClick={closeMenu}>Account</NavLink>
         </nav>
         <div className="sidebar__footer">

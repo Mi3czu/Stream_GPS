@@ -150,6 +150,25 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 .public-map-page__unavailable { padding: 18vh 20px; text-align: center; }
 .danger-zone { border-color: #fda29b; }
 .danger-zone h2 { color: #b42318; }
+.install-page { max-width: 920px !important; }
+.install-page__header { align-items: center; }
+.install-intro { align-items: center; background: linear-gradient(135deg, #eff6ff, #f8fafc); display: flex; gap: 16px; }
+.install-intro h2 { font-size: 1.1rem; margin: 0 0 6px; }
+.install-intro p { color: #475569; margin: 0; }
+.install-intro__icon { align-items: center; background: #1769d2; border-radius: 12px; color: white; display: flex; flex: 0 0 auto; font-size: 2rem; font-weight: 800; height: 50px; justify-content: center; width: 50px; }
+.install-steps { display: grid; gap: 14px; }
+.install-step { display: grid; gap: 16px; grid-template-columns: 34px minmax(0, 1fr); margin: 0; }
+.install-step__number { align-items: center; background: #e8f1ff; border-radius: 50%; color: #175ea8; display: inline-flex; font-size: .9rem; font-weight: 800; height: 30px; justify-content: center; width: 30px; }
+.install-step h2 { font-size: 1.04rem; margin: 3px 0 7px; }
+.install-step p { color: #475569; margin: 0 0 12px; }
+.install-command { align-items: center; background: #0f1726; border: 1px solid #28364b; border-radius: 9px; display: flex; gap: 10px; justify-content: space-between; margin: 9px 0; padding: 8px 9px 8px 12px; }
+.install-command code { color: #d9e7f8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; overflow-wrap: anywhere; }
+.install-command button { flex: 0 0 auto; }
+.install-step .panel__hint { margin: 10px 0 0; }
+.install-address { background: #f1f5f9; border: 1px dashed #b8c9df; border-radius: 8px; color: #344054; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .84rem; margin-top: 10px; padding: 10px 12px; }
+.install-troubleshooting { margin-top: 20px; }
+.install-checks { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.install-checks strong { display: block; font-size: .85rem; margin-bottom: 5px; }
 .stat-card__value small { color: #64748b; font-size: .8rem; font-weight: 600; }
 .theme-toggle { align-items: center; background: #202c3e; color: #dbe4f0; display: flex; gap: 9px; justify-content: center; width: 100%; }
 .theme-toggle--compact { position: absolute; right: 20px; top: 20px; width: auto; }
@@ -204,6 +223,10 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 :root[data-theme='dark'] a { color: #79b8ff; }
 :root[data-theme='dark'] .button { color: white; }
 :root[data-theme='dark'] .gps-map__empty { background: rgba(18, 27, 43, .9); color: #e5edf7; }
+:root[data-theme='dark'] .install-intro { background: linear-gradient(135deg, #14233a, #121b2b); border-color: #294360; }
+:root[data-theme='dark'] .install-intro p, :root[data-theme='dark'] .install-step p { color: #aab9cc; }
+:root[data-theme='dark'] .install-step__number { background: #17365c; color: #9dcbff; }
+:root[data-theme='dark'] .install-address { background: #0f1726; border-color: #34445d; color: #d9e7f8; }
 @media (max-width: 900px) {
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .device-card__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -234,4 +257,7 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
   .settings-form, .session-list li { align-items: stretch; flex-direction: column; }
   .settings-form select { min-width: 0; width: 100%; }
   .public-map-page__stats { grid-template-columns: 1fr; }
+  .install-page__header { align-items: stretch; }
+  .install-intro { align-items: flex-start; }
+  .install-checks { grid-template-columns: 1fr; }
 }

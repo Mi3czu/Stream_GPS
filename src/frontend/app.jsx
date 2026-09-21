@@ -15,6 +15,7 @@ const AccountSettings = lazy(() => import('./account-settings.jsx'));
 const PublicMap = lazy(() => import('./public-map.jsx'));
 const ResetPassword = lazy(() => import('./reset-password.jsx'));
 const RequestPasswordReset = lazy(() => import('./reset-password.jsx').then((module) => ({ default: module.RequestPasswordReset })));
+const InstallAgent = lazy(() => import('./install-agent.jsx'));
 
 function Home() {
   return (
@@ -48,6 +49,7 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/devices" element={<Devices />} />
+        <Route path="/install-agent" element={<InstallAgent />} />
         <Route path="/devices/:deviceId" element={<DeviceDetails />} />
         <Route path="/devices/:deviceId/overlays/:overlayId" element={<OverlaySettings />} />
         <Route path="/audit-log" element={<AuditLog />} />
