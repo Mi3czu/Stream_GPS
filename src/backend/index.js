@@ -1011,11 +1011,6 @@ app.get('/api/v1/devices/:deviceId/chat-commands', authenticate, async (req, res
     const device = deviceResult.rows[0];
     if (!device) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Unknown device');
     await ensureDeviceChatRules(device.id);
-    const existingRules = await pool.query('SELECT action, command, aliases FROM device_chat_command_rules WHERE device_id = $1 AND action <> $2', [device.id, action]);
-    const requestedNames = new Set([rule.command, ...rule.aliases]);
-    const conflict = existingRules.rows.find((existing) => [existing.command, ...(Array.isArray(existing.aliases) ? existing.aliases : [])]
-      .some((name) => requestedNames.has(String(name).toLowerCase())));
-    if (conflict) return sendError(res, 409, 'CHAT_COMMAND_CONFLICT', `A command or alias is already used by ${conflict.action}`);
     const result = await pool.query(
       `SELECT action, enabled, command, aliases, minimum_role, cooldown_seconds, response_enabled, updated_at
        FROM device_chat_command_rules WHERE device_id = $1`, [device.id]
@@ -1037,6 +1032,11 @@ app.patch('/api/v1/devices/:deviceId/chat-commands/:action', authenticate, async
     const device = deviceResult.rows[0];
     if (!device) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Unknown device');
     await ensureDeviceChatRules(device.id);
+    const existingRules = await pool.query('SELECT action, command, aliases FROM device_chat_command_rules WHERE device_id = $1 AND action <> $2', [device.id, action]);
+    const requestedNames = new Set([rule.command, ...rule.aliases]);
+    const conflict = existingRules.rows.find((existing) => [existing.command, ...(Array.isArray(existing.aliases) ? existing.aliases : [])]
+      .some((name) => requestedNames.has(String(name).toLowerCase())));
+    if (conflict) return sendError(res, 409, 'CHAT_COMMAND_CONFLICT', `A command or alias is already used by ${conflict.action}`);
     const result = await pool.query(
       `UPDATE device_chat_command_rules
        SET enabled = $3, command = $4, aliases = $5::jsonb, minimum_role = $6, cooldown_seconds = $7,
