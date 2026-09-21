@@ -5,7 +5,7 @@ import './overlay-settings.css';
 import GpsMap, { mapAttributionLabel } from './gps-map.jsx';
 
 const OPTIONS = {
-  mapTheme: [['standard', 'Standard'], ['satellite', 'Satellite'], ['night', 'Night (OSM filter)'], ['transparent', 'Transparent IRL (experimental)']],
+  mapTheme: [['standard', 'Standard'], ['satellite', 'Satellite'], ['night', 'Night (OSM filter)']],
   textTheme: [['glass', 'Glass'], ['light', 'Light'], ['dark', 'Dark']],
   fontFamily: [['monospace', 'Standard (mono)'], ['Arial, sans-serif', 'Arial'], ['Roboto, sans-serif', 'Roboto'], ['Inter, sans-serif', 'Inter'], ['Oswald, sans-serif', 'Oswald']],
   mapShape: [['round', 'Round'], ['square', 'Square']]
@@ -39,10 +39,12 @@ const OverlaySettings = () => {
       .then((response) => {
         if (response.data.overlay.device_id !== deviceId) return navigate('/devices', { replace: true });
         const savedConfig = response.data.overlay.config;
-        // Remove the retired dark-provider selection as soon as this overlay
-        // is edited; rendering already falls back safely for OBS meanwhile.
+        // Retired experimental/provider-backed selections are made safe as
+        // soon as an overlay is opened for editing.
         setOverlay(response.data.overlay);
-        setConfig(savedConfig.mapTheme === 'dark' ? { ...savedConfig, mapTheme: 'night' } : savedConfig);
+        setConfig(['dark', 'transparent'].includes(savedConfig.mapTheme)
+          ? { ...savedConfig, mapTheme: savedConfig.mapTheme === 'dark' ? 'night' : 'standard' }
+          : savedConfig);
       })
       .catch((requestError) => setError(requestError.response?.data?.message || requestError.message));
   }, [deviceId, navigate, overlayId]);

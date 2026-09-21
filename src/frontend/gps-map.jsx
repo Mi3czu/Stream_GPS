@@ -47,10 +47,6 @@ const MAP_TILES = {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   },
-  transparent: {
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  },
   dark: {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -62,11 +58,10 @@ const MAP_TILES = {
 };
 
 export const mapAttributionLabel = (mapTheme) => {
-  if (mapTheme === 'transparent') return '© OpenStreetMap contributors';
+  // Older saved "dark" overlays deliberately render with the dependable
+  // Night filter until an API-backed dark provider is introduced.
   if (mapTheme === 'dark') return '© OpenStreetMap contributors';
-  if (mapTheme === 'dark') return '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors';
   if (mapTheme === 'satellite') return 'Tiles © Esri';
-  if (mapTheme === 'dark') return '© OpenStreetMap contributors © CARTO';
   return '© OpenStreetMap contributors';
 };
 
@@ -84,10 +79,9 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
 
   return (
     <div className="gps-map" style={size ? { '--gps-map-size': `${size}px` } : undefined} aria-label="GPS map">
-      {effectiveTheme === 'transparent' && <svg className="gps-map__filters" aria-hidden="true"><defs><filter id="stream-gps-transparent-map" colorInterpolationFilters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0.2126 0.7152 0.0722 0 0" /></filter></defs></svg>}
       <MapContainer
         center={points[0] || DEFAULT_CENTER}
-        className={effectiveTheme === 'night' ? 'gps-map__leaflet--night' : effectiveTheme === 'transparent' ? 'gps-map__leaflet--transparent' : ''}
+        className={effectiveTheme === 'night' ? 'gps-map__leaflet--night' : ''}
         zoom={points.length ? 14 : 6}
         zoomControl={zoomControl}
         attributionControl={attributionControl}
