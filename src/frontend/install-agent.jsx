@@ -47,7 +47,7 @@ const InstallAgent = () => {
 
         <article className="panel install-step">
           <span className="install-step__number">3</span>
-          <div><h2>Install the agent</h2><p>Use Quick setup unless you want to review the installer source first. Neither option asks for your Stream GPS device key in SSH.</p><div className="install-option install-option--recommended"><div><strong>Quick setup</strong><span>Recommended — copy one command into the BelaBox SSH terminal.</span></div><CopyCommand>{quickInstallCommand}</CopyCommand></div><details className="install-option install-option--manual"><summary><strong>Manual installation</strong><span>Download first and optionally inspect the script before running it.</span></summary><div className="install-option__content"><CopyCommand>{`curl -fL ${installScriptUrl} -o /tmp/install-stream-gps-device.sh`}</CopyCommand><p className="panel__hint">Optional: <code>less /tmp/install-stream-gps-device.sh</code> displays the downloaded source code. Press <kbd>q</kbd> to return to the terminal.</p><CopyCommand>{'sudo sh /tmp/install-stream-gps-device.sh'}</CopyCommand></div></details></div>
+          <div><h2>Install the agent</h2><p>Copy this command into the BelaBox SSH terminal. The installer asks only for a password to protect the local panel — platform credentials are entered later in the browser.</p><div className="install-option install-option--recommended"><CopyCommand>{quickInstallCommand}</CopyCommand></div></div>
         </article>
 
         <article className="panel install-step">

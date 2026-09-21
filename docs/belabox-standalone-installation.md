@@ -53,28 +53,6 @@ curl -fsSL https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/installer/in
 
 Instalator zapyta tylko o hasło do lokalnego panelu. Nie wpisujesz w SSH adresu platformy, `DEVICE_ID` ani `DEVICE_KEY`.
 
-### Wariant ręczny — dla osób chcących sprawdzić instalator
-
-Pobierz plik:
-
-```sh
-curl -fL https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/installer/install-device.sh -o /tmp/install-stream-gps-device.sh
-```
-
-Opcjonalnie obejrzyj kod skryptu:
-
-```sh
-less /tmp/install-stream-gps-device.sh
-```
-
-`less` wyświetla zawartość pobranego pliku; aby wrócić do terminala, naciśnij `q`.
-
-Uruchom instalator:
-
-```sh
-sudo sh /tmp/install-stream-gps-device.sh
-```
-
 Opcjonalnie najpierw wykonaj kontrolę bez wprowadzania zmian:
 
 ```sh

@@ -166,18 +166,7 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 .install-command button { flex: 0 0 auto; }
 .install-step .panel__hint { margin: 10px 0 0; }
 .install-option { background: #f8fafc; border: 1px solid #dce6f2; border-radius: 10px; margin-top: 12px; padding: 14px; }
-.install-option > div:first-child { display: grid; gap: 3px; }
-.install-option strong { font-size: .9rem; }
-.install-option span { color: #64748b; font-size: .82rem; }
 .install-option--recommended { border-color: #aac9ee; box-shadow: inset 3px 0 0 #1769d2; }
-.install-option--manual { padding: 0; }
-.install-option--manual summary { cursor: pointer; display: grid; gap: 3px; list-style: none; padding: 14px; }
-.install-option--manual summary::-webkit-details-marker { display: none; }
-.install-option--manual summary::after { color: #64748b; content: 'Show advanced steps'; font-size: .78rem; font-weight: 700; margin-top: 5px; }
-.install-option--manual[open] summary { border-bottom: 1px solid #dce6f2; }
-.install-option--manual[open] summary::after { content: 'Hide advanced steps'; }
-.install-option__content { padding: 0 14px 14px; }
-.install-option kbd { background: #e2e8f0; border-radius: 4px; color: #334155; font-family: inherit; font-size: .76rem; font-weight: 700; padding: 1px 5px; }
 .install-address { background: #f1f5f9; border: 1px dashed #b8c9df; border-radius: 8px; color: #344054; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .84rem; margin-top: 10px; padding: 10px 12px; }
 .install-troubleshooting { margin-top: 20px; }
 .install-checks { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -242,9 +231,6 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 :root[data-theme='dark'] .install-address { background: #0f1726; border-color: #34445d; color: #d9e7f8; }
 :root[data-theme='dark'] .install-option { background: #0f1726; border-color: #28364b; }
 :root[data-theme='dark'] .install-option--recommended { border-color: #315a8c; }
-:root[data-theme='dark'] .install-option span { color: #aab9cc; }
-:root[data-theme='dark'] .install-option--manual[open] summary { border-color: #28364b; }
-:root[data-theme='dark'] .install-option kbd { background: #28364b; color: #d9e7f8; }
 @media (max-width: 900px) {
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .device-card__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
