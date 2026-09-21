@@ -45,6 +45,7 @@ services:
       POSTGRES_USER: stream_gps
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stream_gps_local_only}
       JWT_SECRET: ${JWT_SECRET:-local-development-secret-do-not-use-in-production}
+      NODE_ENV: development
       PORT: 3000
     depends_on:
       migrate:
