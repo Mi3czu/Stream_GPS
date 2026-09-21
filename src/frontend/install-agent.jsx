@@ -57,7 +57,7 @@ const InstallAgent = () => {
 
         <article className="panel install-step">
           <span className="install-step__number">5</span>
-          <div><h2>Open the local agent panel</h2><p>Find the BelaBox address and open its local configuration panel from a device connected to the same Wi-Fi or hotspot:</p><CopyCommand>{'hostname -I'}</CopyCommand><div className="install-address">http://BELABOX_IP:26666</div><p className="panel__hint">Sign in with <code>admin</code> and the local-panel password chosen during installation. Do not forward port 26666 to the internet.</p></div>
+          <div><h2>Open the local agent panel</h2><p>Use the same BelaBox IP address that you used for SSH, adding port <code>26666</code>. Open it from a device connected to the same Wi-Fi or hotspot:</p><div className="install-address">http://THE_SAME_BELABOX_IP:26666</div><p className="panel__hint">Sign in with <code>admin</code> and the local-panel password chosen during installation. Do not forward port 26666 to the internet.</p></div>
         </article>
       </section>
 

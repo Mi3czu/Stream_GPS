@@ -73,13 +73,7 @@ Instalator:
 
 ## 4. Otwieranie własnego panelu konfiguracyjnego
 
-Sprawdź adres Belaboxa:
-
-```sh
-hostname -I
-```
-
-Na komputerze w tej samej sieci otwórz:
+Na komputerze w tej samej sieci otwórz ten sam adres IP Belaboxa, którego użyłeś do połączenia SSH, z dopisanym portem `26666`:
 
 ```text
 http://ADRES_BELABOXA:26666
