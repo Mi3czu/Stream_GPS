@@ -3,18 +3,12 @@
   position: relative;
 }
 
-.gps-map .leaflet-container,
-.gps-map__vector {
+.gps-map .leaflet-container {
   background: transparent;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   height: var(--gps-map-size, 360px);
   width: 100%;
-}
-
-.gps-map__vector .maplibregl-ctrl-attrib {
-  background: rgba(255, 255, 255, 0.72);
-  font-size: 9px;
 }
 
 .gps-map__leaflet--night .leaflet-tile-pane {
