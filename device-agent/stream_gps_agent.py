@@ -7,9 +7,11 @@ from pathlib import Path
 
 CONFIG_PATH = Path('/etc/stream-gps-device/config.json')
 QUEUE_PATH = Path('/var/lib/stream-gps-device/queue.jsonl')
-STATUS = {'started_at': time.time(), 'modem': None, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0}
+STATE_DIR = QUEUE_PATH.parent
+STATUS = {'started_at': time.time(), 'modem': None, 'modem_info': {}, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0}
 LOCK = threading.Lock()
 DEFAULT_UPDATE_BASE = 'https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/device-agent'
+CPU_SAMPLE = None
 
 def load_config():
     with CONFIG_PATH.open(encoding='utf-8') as handle: return json.load(handle)
@@ -213,8 +215,66 @@ def validate_connection(api_url, device_id, device_key, config):
         raise RuntimeError('Platform returned HTTP ' + str(error.code)) from error
     return candidate
 
+def modem_info(modem):
+    result = run('mmcli', '-K', '-m', modem)
+    if result.returncode: return {}
+    values = {}
+    for line in result.stdout.splitlines():
+        if ':' not in line: continue
+        key, value = line.split(':', 1); values[key.strip()] = value.strip().strip("'")
+    signal = values.get('modem.generic.signal-quality', values.get('modem.signal-quality', ''))
+    signal_match = re.search(r'\d+', signal)
+    return {
+        'signal_quality': int(signal_match.group()) if signal_match else None,
+        'access_technology': values.get('modem.generic.access-technologies', values.get('modem.3gpp.access-technologies', '')),
+        'registration': values.get('modem.3gpp.registration-state', ''),
+        'operator': values.get('modem.3gpp.operator-name', ''),
+    }
+
+def system_metrics():
+    global CPU_SAMPLE
+    metrics = {'cpu': None, 'memory_used': None, 'memory_total': None, 'disk_used': None, 'disk_total': None, 'temperature': None}
+    try:
+        fields = Path('/proc/stat').read_text(encoding='utf-8').splitlines()[0].split()[1:]
+        values = [int(value) for value in fields]; total = sum(values); idle = values[3] + (values[4] if len(values) > 4 else 0)
+        if CPU_SAMPLE:
+            previous_total, previous_idle = CPU_SAMPLE; delta_total, delta_idle = total - previous_total, idle - previous_idle
+            if delta_total > 0: metrics['cpu'] = round(100 * (1 - delta_idle / delta_total))
+        CPU_SAMPLE = (total, idle)
+    except (OSError, ValueError, IndexError): pass
+    try:
+        memory = {}
+        for line in Path('/proc/meminfo').read_text(encoding='utf-8').splitlines():
+            key, value = line.split(':', 1); memory[key] = int(value.split()[0]) * 1024
+        metrics['memory_total'] = memory.get('MemTotal'); metrics['memory_used'] = memory.get('MemTotal', 0) - memory.get('MemAvailable', 0)
+    except (OSError, ValueError, IndexError): pass
+    try:
+        disk = shutil.disk_usage(STATE_DIR); metrics['disk_used'] = disk.used; metrics['disk_total'] = disk.total
+    except OSError: pass
+    temperatures = []
+    for path in Path('/sys/class/thermal').glob('thermal_zone*/temp'):
+        try:
+            value = float(path.read_text(encoding='utf-8').strip()); temperatures.append(value / 1000 if value > 1000 else value)
+        except (OSError, ValueError): pass
+    if temperatures: metrics['temperature'] = round(max(temperatures), 1)
+    return metrics
+
+def format_bytes(value):
+    if value is None: return 'Not available'
+    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
+        if value < 1024 or unit == 'TB': return f'{value:.0f} {unit}' if unit == 'B' else f'{value:.1f} {unit}'
+        value /= 1024
+
+def elapsed(value):
+    if not value: return 'Never'
+    seconds = max(0, int(time.time() - value))
+    if seconds < 60: return f'{seconds}s ago'
+    if seconds < 3600: return f'{seconds // 60}m ago'
+    return f'{seconds // 3600}h ago'
+
 def tracking_loop():
     gps_enabled_for = None
+    last_modem_poll = 0
     while True:
         try:
             config = load_config()
@@ -225,6 +285,10 @@ def tracking_loop():
             if modem is None: raise RuntimeError('No ModemManager modem detected')
             if modem != gps_enabled_for: enable_gps(modem); gps_enabled_for = modem
             with LOCK: STATUS['modem'] = modem
+            if time.time() - last_modem_poll >= 30:
+                info = modem_info(modem)
+                with LOCK: STATUS['modem_info'] = info
+                last_modem_poll = time.time()
             position = read_position(modem)
             if position is None:
                 with LOCK: STATUS['gps_fix'] = False; STATUS['last_error'] = 'Waiting for GPS fix'
@@ -274,6 +338,32 @@ class Handler(BaseHTTPRequestHandler):
     def setup_page(self, message=''):
         notification = f'<p class="notice">{html.escape(message)}</p>' if message else ''
         return f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect Stream GPS</title><style>body{{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:760px;margin:30px auto;padding:16px}}section{{background:#121b2b;border:1px solid #28364b;border-radius:12px;padding:20px;margin:16px 0}}input{{width:100%;box-sizing:border-box;padding:10px;margin:5px 0 14px;background:#0f1726;color:white;border:1px solid #44536a;border-radius:7px}}button{{padding:10px 15px;background:#1f6feb;color:white;border:0;border-radius:7px;margin-right:8px;cursor:pointer}}button:disabled{{opacity:.55;cursor:not-allowed}}.secondary{{background:#28364b}}.ok{{color:#35d39a}}.error{{background:#4b2028;border-radius:8px;color:#ffb4ab;padding:10px 12px}}.notice{{background:#17365c;border-radius:8px;color:#cbe3ff;padding:10px 12px}}.key-row{{display:flex;gap:8px}}.key-row input{{margin-bottom:14px}}.key-row button{{height:42px;margin-top:5px;white-space:nowrap}}.hint{{color:#aab9cc;font-size:.9em}}</style></head><body><h1>Connect Stream GPS</h1><section><h2>Finish device setup</h2><p>Enter the credentials from your Stream GPS <b>Devices</b> page. The agent saves them only after the platform accepts them.</p>{notification}<form id="connect-form" method="post" action="/connect"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" placeholder="https://stream-gps.example" inputmode="url" required><label>Device ID</label><input name="device_id" placeholder="BELABOX_7522" required><label>Device key</label><div class="key-row"><input id="device-key" name="device_key" type="password" autocomplete="off" required><button class="secondary" id="toggle-key" type="button">Show</button></div><p id="trim-notice" class="notice" hidden>Leading or trailing spaces were removed before testing.</p><button id="test-button" class="secondary" type="button">Test connection</button><button id="connect-button" type="submit" disabled>Save and connect</button><p id="result" aria-live="polite"></p></form></section><section><h2>What happens next</h2><p>After a successful connection, the agent starts GPS uploads. You can then change the upload interval and modem settings here.</p><p class="hint">The device key remains hidden after saving. To retrieve it later, use <b>Your keys</b> on the device page in Stream GPS.</p></section><script>const form=document.getElementById('connect-form'),key=document.getElementById('device-key'),notice=document.getElementById('trim-notice'),result=document.getElementById('result'),save=document.getElementById('connect-button');function clean(){{let changed=false;for(const input of form.querySelectorAll('input[name="api_url"],input[name="device_id"],input[name="device_key"]')){{const value=input.value.trim();if(value!==input.value){{input.value=value;changed=true}}}}notice.hidden=!changed}}document.getElementById('toggle-key').onclick=()=>{{key.type=key.type==='password'?'text':'password';document.getElementById('toggle-key').textContent=key.type==='password'?'Show':'Hide'}};document.getElementById('test-button').onclick=async()=>{{clean();result.className='notice';result.textContent='Testing connection…';save.disabled=true;try{{const response=await fetch('/test-connection',{{method:'POST',body:new FormData(form)}});const payload=await response.json();result.className=response.ok?'ok':'error';result.textContent=payload.message;save.disabled=!response.ok}}catch(error){{result.className='error';result.textContent='Unable to test the connection.'}}}};form.addEventListener('submit',clean);</script></body></html>'''
+    def dashboard_page(self, config, status, sharing, sharing_error, update):
+        info = status.get('modem_info') or {}
+        metrics = system_metrics()
+        signal = info.get('signal_quality')
+        signal_text = f'{signal}%' if signal is not None else 'Not available'
+        connected = bool(status.get('last_upload') and time.time() - status['last_upload'] < 90)
+        upload_text, upload_class = ('Connected', 'good') if connected else ('Waiting for upload', 'warn')
+        gps_text, gps_class = ('GPS fix active', 'good') if status.get('gps_fix') else ('Waiting for GPS fix', 'warn')
+        modem_name = info.get('operator') or f'Modem {status.get("modem") or "not detected"}'
+        technology = info.get('access_technology') or 'Technology unavailable'
+        registration = info.get('registration') or 'Registration unavailable'
+        sharing_enabled = bool(sharing.get('public_share_enabled'))
+        sharing_text = '<b class="good">enabled</b>' if sharing_enabled else '<b class="warn">disabled</b>'
+        if sharing_error: sharing_text = '<b class="bad">unavailable</b> <code>' + html.escape(sharing_error) + '</code>'
+        sharing_form = '' if sharing_error else f'<form method="post" action="/toggle-public-sharing"><input type="hidden" name="csrf" value="{self.csrf}"><input type="hidden" name="enabled" value="{str(not sharing_enabled).lower()}"><button class="{"secondary" if sharing_enabled else ""}">{"Stop sharing" if sharing_enabled else "Start sharing"}</button></form>'
+        update_text = '' if not update else (f"<p>Available version: <b>{html.escape(update['available'])}</b></p>" + (f'<form method="post" action="/install-update"><input type="hidden" name="csrf" value="{self.csrf}"><button>Install update</button></form>' if update['update_available'] else '<p class="good">You are up to date.</p>'))
+        def metric(label, value, hint): return f'<div class="metric"><span>{html.escape(label)}</span><b>{html.escape(value)}</b><small>{html.escape(hint)}</small></div>'
+        system_cards = ''.join((
+            metric('CPU', f'{metrics["cpu"]}%' if metrics['cpu'] is not None else 'Measuring…', 'current usage'),
+            metric('Memory', f'{format_bytes(metrics["memory_used"])} / {format_bytes(metrics["memory_total"])}', 'used / total'),
+            metric('Storage', f'{format_bytes(metrics["disk_used"])} / {format_bytes(metrics["disk_total"])}', 'device filesystem'),
+            metric('Temperature', f'{metrics["temperature"]} °C' if metrics['temperature'] is not None else 'Not available', 'hardware sensor'),
+        ))
+        error = status.get('last_error')
+        error_html = f'<p class="status-error"><b>Attention:</b> {html.escape(str(error))}</p>' if error and error != 'Waiting for GPS fix' else ''
+        return f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS Device</title><style>body{{background:#0b1120;color:#e5edf7;font:16px system-ui;margin:0;padding:24px}}main{{margin:auto;max-width:860px}}section,details{{background:#121b2b;border:1px solid #28364b;border-radius:14px;margin:14px 0;padding:18px}}h1,h2,p{{margin-top:0}}h1{{font-size:1.55rem;margin-bottom:4px}}h2{{font-size:1.05rem;margin-bottom:8px}}p,small{{color:#aab9cc}}button{{background:#1f6feb;border:0;border-radius:8px;color:white;cursor:pointer;font:inherit;font-weight:700;padding:9px 13px}}button.secondary{{background:#28364b}}input{{background:#0f1726;border:1px solid #44536a;border-radius:8px;box-sizing:border-box;color:white;margin:5px 0 14px;padding:10px;width:100%}}.top{{align-items:center;display:flex;gap:16px;justify-content:space-between}}.top p{{margin:0}}.health,.modem-grid,.system-grid{{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:16px}}.health-card,.metric,.modem-grid div{{background:#0f1726;border:1px solid #28364b;border-radius:10px;padding:12px}}.health-card span,.metric span,.modem-grid span{{color:#93a5bd;display:block;font-size:.75rem;font-weight:700;text-transform:uppercase}}.health-card b,.metric b,.modem-grid b{{display:block;font-size:1rem;margin:6px 0 3px;overflow-wrap:anywhere}}.health-card small,.metric small{{font-size:.76rem}}.good{{color:#35d39a}}.warn{{color:#fbbf24}}.bad{{color:#f97066}}.status-error{{background:#3b2028;border:1px solid #71333d;border-radius:9px;color:#ffd1cc;margin:14px 0 0;padding:10px 12px}}details{{padding:0}}summary{{align-items:center;cursor:pointer;display:flex;justify-content:space-between;list-style:none;padding:18px}}summary::-webkit-details-marker{{display:none}}summary small{{margin-left:auto;margin-right:12px}}details>div{{border-top:1px solid #28364b;padding:18px}}.key-row{{display:flex;gap:8px}}.key-row input{{margin-bottom:14px}}.key-row button{{height:42px;margin-top:5px;white-space:nowrap}}code{{overflow-wrap:anywhere}}@media(max-width:650px){{body{{padding:14px}}.top{{align-items:flex-start;flex-direction:column}}.health,.modem-grid,.system-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}</style></head><body><main><header class="top"><div><h1>Stream GPS Device</h1><p>Live health, modem and system status.</p></div><button class="secondary" onclick="location.reload()">Refresh status</button></header><section><h2>Device health</h2><div class="health"><div class="health-card"><span>GPS</span><b class="{gps_class}">{gps_text}</b><small>Modem {html.escape(str(status.get('modem') or 'not detected'))}</small></div><div class="health-card"><span>Upload</span><b class="{upload_class}">{upload_text}</b><small>Last upload {html.escape(elapsed(status.get('last_upload')))}</small></div><div class="health-card"><span>Signal</span><b class="{'good' if signal is not None and signal >= 50 else 'warn'}">{signal_text}</b><small>{html.escape(technology)}</small></div><div class="health-card"><span>Offline queue</span><b>{status.get('queue_size', 0)}</b><small>stored positions</small></div></div>{error_html}</section><section><h2>Modem</h2><div class="modem-grid"><div><span>Network</span><b>{html.escape(modem_name)}</b></div><div><span>Registration</span><b>{html.escape(registration)}</b></div><div><span>Technology</span><b>{html.escape(technology)}</b></div><div><span>Signal quality</span><b>{html.escape(signal_text)}</b></div></div></section><section><h2>Viewer privacy</h2><p>Public location sharing: {sharing_text}</p>{sharing_form}<p>Only the viewer map is affected. GPS uploads and the private dashboard continue working.</p></section><details><summary><h2>Configuration</h2><small>{html.escape(config['api_url'])} · {html.escape(str(config.get('modem_id', 'auto')))} · {float(config.get('interval_seconds', 2)):g}s</small></summary><div><form method="post" action="/save"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" value="{html.escape(config['api_url'])}" required><label>Device ID</label><input name="device_id" value="{html.escape(config['device_id'])}" required><label>New device key (leave empty to keep current)</label><div class="key-row"><input id="device-key" name="device_key" type="password"><button class="secondary" id="toggle-key" type="button">Show</button></div><label>Update interval in seconds (0.5–10)</label><input name="interval_seconds" type="number" min="0.5" max="10" step="0.5" value="{float(config.get('interval_seconds',2)):g}"><label>Modem ID (`auto` recommended)</label><input name="modem_id" value="{html.escape(str(config.get('modem_id','auto')))}"><button>Save configuration</button></form></div></details><section><div class="top"><div><h2>System</h2><p>Agent version <b>{html.escape(current_version())}</b> · running for {html.escape(elapsed(status.get('started_at')))}</p></div><form method="post" action="/check-update"><input type="hidden" name="csrf" value="{self.csrf}"><button class="secondary">Check for updates</button></form></div><div class="system-grid">{system_cards}</div>{update_text}</section><script>const toggle=document.getElementById('toggle-key');if(toggle)toggle.onclick=()=>{{const key=document.getElementById('device-key');key.type=key.type==='password'?'text':'password';toggle.textContent=key.type==='password'?'Show':'Hide'}}</script></main></body></html>'''
     def do_GET(self):
         if not self.require_auth(): return
         if self.path == '/api/status':
@@ -286,6 +376,7 @@ class Handler(BaseHTTPRequestHandler):
             sharing = device_api(config).get('sharing') or {}; sharing_error = None
         except Exception as error:
             sharing = {}; sharing_error = str(error)
+        self.respond(200, self.dashboard_page(config, status, sharing, sharing_error, update)); return
         sharing_enabled = bool(sharing.get('public_share_enabled'))
         sharing_text = '<b class="ok">enabled</b>' if sharing_enabled else '<b class="bad">disabled</b>'
         if sharing_error: sharing_text = '<b class="bad">unavailable</b> <code>' + html.escape(sharing_error) + '</code>'
