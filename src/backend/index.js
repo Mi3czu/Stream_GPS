@@ -52,6 +52,45 @@ function chatConfiguration(platform) {
   };
 }
 
+const CHAT_COMMAND_DEFAULTS = [
+  { action: 'map', label: 'Share viewer map', command: '!map', aliases: ['!mapa'], minimum_role: 'viewer', cooldown_seconds: 30, response_enabled: true },
+  { action: 'gps_status', label: 'Show GPS status', command: '!gps', aliases: [], minimum_role: 'viewer', cooldown_seconds: 15, response_enabled: true },
+  { action: 'private_mode', label: 'Hide viewer location', command: '!private', aliases: [], minimum_role: 'admin', cooldown_seconds: 0, response_enabled: true },
+  { action: 'live_mode', label: 'Resume viewer location', command: '!live', aliases: [], minimum_role: 'owner', cooldown_seconds: 0, response_enabled: true },
+  { action: 'hide_overlay', label: 'Hide OBS overlays', command: '!hidegps', aliases: [], minimum_role: 'moderator', cooldown_seconds: 0, response_enabled: true },
+  { action: 'show_overlay', label: 'Show OBS overlays', command: '!showgps', aliases: [], minimum_role: 'admin', cooldown_seconds: 0, response_enabled: true },
+  { action: 'panic', label: 'Emergency privacy stop', command: '!panic', aliases: ['!gpspanic'], minimum_role: 'admin', cooldown_seconds: 0, response_enabled: true }
+];
+const CHAT_COMMAND_ACTIONS = new Set(CHAT_COMMAND_DEFAULTS.map((rule) => rule.action));
+const CHAT_ROLES = new Set(['viewer', 'moderator', 'admin', 'owner']);
+const CHAT_COMMAND_PATTERN = /^![a-z0-9_-]{1,24}$/i;
+
+async function ensureDeviceChatRules(deviceId) {
+  for (const rule of CHAT_COMMAND_DEFAULTS) {
+    await pool.query(
+      `INSERT INTO device_chat_command_rules
+       (device_id, action, command, aliases, minimum_role, cooldown_seconds, response_enabled)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
+       ON CONFLICT (device_id, action) DO NOTHING`,
+      [deviceId, rule.action, rule.command, JSON.stringify(rule.aliases), rule.minimum_role, rule.cooldown_seconds, rule.response_enabled]
+    );
+  }
+}
+
+function validateChatCommandRule(action, input) {
+  if (!CHAT_COMMAND_ACTIONS.has(action)) return null;
+  const command = String(input.command || '').trim().toLowerCase();
+  const aliases = Array.isArray(input.aliases) ? input.aliases.map((item) => String(item).trim().toLowerCase()).filter(Boolean) : null;
+  const minimumRole = String(input.minimum_role || '');
+  const cooldown = Number(input.cooldown_seconds);
+  if (!CHAT_COMMAND_PATTERN.test(command) || !aliases || aliases.length > 4 || !aliases.every((alias) => CHAT_COMMAND_PATTERN.test(alias)) ||
+      new Set([command, ...aliases]).size !== aliases.length + 1 || !CHAT_ROLES.has(minimumRole) ||
+      !Number.isInteger(cooldown) || cooldown < 0 || cooldown > 3600 || typeof input.enabled !== 'boolean' || typeof input.response_enabled !== 'boolean') return null;
+  // A public panic command would turn an anti-doxxing tool into a griefing tool.
+  if (action === 'panic' && (!input.enabled || !['admin', 'owner'].includes(minimumRole))) return null;
+  return { command, aliases, minimumRole, cooldown, enabled: input.enabled, responseEnabled: input.response_enabled };
+}
+
 // These endpoints deliberately only expose connection state. OAuth credentials
 // remain server-side and integrations are inert until explicitly connected.
 app.get('/api/v1/chat/integrations', authenticate, async (req, res) => {
@@ -756,6 +795,49 @@ app.get('/api/v1/devices/:deviceId/credentials', authenticate, async (req, res) 
   } catch (error) {
     console.error('Credentials read error:', error.message);
     sendError(res, 500, 'CREDENTIALS_READ_FAILED', 'Unable to load credentials');
+  }
+});
+
+app.get('/api/v1/devices/:deviceId/chat-commands', authenticate, async (req, res) => {
+  try {
+    const deviceResult = await pool.query('SELECT id FROM devices WHERE device_id = $1 AND owner_id = $2', [req.params.deviceId, req.user.sub]);
+    const device = deviceResult.rows[0];
+    if (!device) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Unknown device');
+    await ensureDeviceChatRules(device.id);
+    const result = await pool.query(
+      `SELECT action, enabled, command, aliases, minimum_role, cooldown_seconds, response_enabled, updated_at
+       FROM device_chat_command_rules WHERE device_id = $1`, [device.id]
+    );
+    const byAction = new Map(result.rows.map((rule) => [rule.action, rule]));
+    res.json({ commands: CHAT_COMMAND_DEFAULTS.map(({ label, ...rule }) => ({ label, ...byAction.get(rule.action) })) });
+  } catch (error) {
+    console.error('Chat command rules read error:', error.message);
+    sendError(res, 500, 'CHAT_COMMANDS_READ_FAILED', 'Unable to load chat command settings');
+  }
+});
+
+app.patch('/api/v1/devices/:deviceId/chat-commands/:action', authenticate, async (req, res) => {
+  const action = String(req.params.action || '');
+  const rule = validateChatCommandRule(action, req.body);
+  if (!rule) return sendError(res, 400, 'CHAT_COMMAND_INVALID', 'Invalid command settings. Panic must remain enabled and restricted to an admin or owner.');
+  try {
+    const deviceResult = await pool.query('SELECT id FROM devices WHERE device_id = $1 AND owner_id = $2', [req.params.deviceId, req.user.sub]);
+    const device = deviceResult.rows[0];
+    if (!device) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Unknown device');
+    await ensureDeviceChatRules(device.id);
+    const result = await pool.query(
+      `UPDATE device_chat_command_rules
+       SET enabled = $3, command = $4, aliases = $5::jsonb, minimum_role = $6, cooldown_seconds = $7,
+           response_enabled = $8, updated_at = NOW()
+       WHERE device_id = $1 AND action = $2
+       RETURNING action, enabled, command, aliases, minimum_role, cooldown_seconds, response_enabled, updated_at`,
+      [device.id, action, rule.enabled, rule.command, JSON.stringify(rule.aliases), rule.minimumRole, rule.cooldown, rule.responseEnabled]
+    );
+    await recordAudit(req, 'chat.command.updated', 'device', req.params.deviceId, { action, command: rule.command, minimum_role: rule.minimumRole });
+    res.json({ command: result.rows[0] });
+  } catch (error) {
+    console.error('Chat command rule update error:', error.message);
+    sendError(res, 500, 'CHAT_COMMAND_UPDATE_FAILED', 'Unable to save chat command settings');
   }
 });
 

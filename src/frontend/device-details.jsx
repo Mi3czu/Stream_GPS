@@ -25,6 +25,8 @@ const DeviceDetails = () => {
   const [overlays, setOverlays] = useState([]);
   const [credentials, setCredentials] = useState({ device_key: null, overlays: [] });
   const [visibleKeys, setVisibleKeys] = useState({});
+  const [chatCommands, setChatCommands] = useState([]);
+  const [savingCommand, setSavingCommand] = useState(null);
   const token = sessionStorage.getItem('accessToken');
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -33,13 +35,14 @@ const DeviceDetails = () => {
     const params = new URLSearchParams({ limit: '5000' });
     if (rangeHours !== 'all') params.set('from', new Date(Date.now() - Number(rangeHours) * 3600000).toISOString());
     try {
-      const [deviceResponse, historyResponse, overlaysResponse, credentialsResponse] = await Promise.all([
+      const [deviceResponse, historyResponse, overlaysResponse, credentialsResponse, commandsResponse] = await Promise.all([
         axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}`, { headers }),
         axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/history?${params}`, { headers }),
         axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/overlays`, { headers }),
-        axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/credentials`, { headers })
+        axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/credentials`, { headers }),
+        axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/chat-commands`, { headers })
       ]);
-      setDevice(deviceResponse.data.device); setPositions(historyResponse.data.positions); setOverlays(overlaysResponse.data.overlays); setCredentials(credentialsResponse.data); setError(null);
+      setDevice(deviceResponse.data.device); setPositions(historyResponse.data.positions); setOverlays(overlaysResponse.data.overlays); setCredentials(credentialsResponse.data); setChatCommands(commandsResponse.data.commands || []); setError(null);
     } catch (requestError) {
       if (requestError.response?.status === 401) { sessionStorage.removeItem('accessToken'); navigate('/login', { replace: true }); return; }
       setError(requestError.response?.data?.message || requestError.message);
@@ -131,6 +134,27 @@ const DeviceDetails = () => {
     } catch (requestError) { setError(requestError.response?.data?.message || requestError.message); }
   };
 
+  const changeCommand = (action, change) => {
+    setChatCommands((current) => current.map((rule) => rule.action === action ? { ...rule, ...change } : rule));
+  };
+
+  const saveCommand = async (rule) => {
+    setSavingCommand(rule.action);
+    try {
+      const response = await axios.patch(`/api/v1/devices/${encodeURIComponent(deviceId)}/chat-commands/${encodeURIComponent(rule.action)}`, {
+        enabled: rule.enabled,
+        command: rule.command,
+        aliases: String(rule.aliasesText ?? (rule.aliases || []).join(', ')).split(',').map((alias) => alias.trim()).filter(Boolean),
+        minimum_role: rule.minimum_role,
+        cooldown_seconds: Number(rule.cooldown_seconds),
+        response_enabled: rule.response_enabled
+      }, { headers });
+      setChatCommands((current) => current.map((item) => item.action === rule.action ? { ...response.data.command, label: item.label, aliasesText: response.data.command.aliases.join(', ') } : item));
+      setError(null);
+    } catch (requestError) { setError(requestError.response?.data?.message || requestError.message); }
+    finally { setSavingCommand(null); }
+  };
+
   const regeneratePublicLink = async () => {
     if (!window.confirm('Regenerate the public map link? The previous link and QR code will stop working immediately.')) return;
     try {
@@ -188,6 +212,13 @@ const DeviceDetails = () => {
       <section className="panel"><div className="panel__header"><div><h2>Viewer map</h2><p className="panel__hint">Share only your current position. Saved route history remains private.</p></div><span className={`status-pill ${device.public_share_enabled ? 'status-pill--online' : 'status-pill--offline'}`}>{device.public_share_enabled ? 'sharing on' : 'sharing off'}</span></div>
         <div className="sharing-actions"><button onClick={() => updatePublicSharing(!device.public_share_enabled)} className={device.public_share_enabled ? 'button--danger' : ''}>{device.public_share_enabled ? 'Stop sharing' : 'Start sharing'}</button>{device.public_share_id && <button className="button--secondary" onClick={regeneratePublicLink}>Regenerate link</button>}</div>
         {publicMapUrl && <div className="share-link"><div><strong>Public viewer link</strong><code>{publicMapUrl}</code><div className="sharing-actions"><button onClick={() => navigator.clipboard.writeText(publicMapUrl)}>Copy link</button><a className="button button--secondary" href={publicMapUrl} target="_blank" rel="noreferrer">Open preview</a></div>{!device.public_share_enabled && <p className="panel__hint">This link is currently disabled and exposes no location. Starting sharing will reactivate it.</p>}</div>{device.public_share_enabled && <div className="share-qr"><QRCodeSVG value={publicMapUrl} size={150} level="M" title="QR code for the public viewer map" /></div>}</div>}
+      </section>
+      <section className="panel"><div className="panel__header"><div><h2>Chat commands</h2><p className="panel__hint">Configure commands once for this device. They remain inactive until you connect Kick or Twitch in Account settings.</p></div></div>
+        <div className="command-list">{chatCommands.map((rule) => <article className="command-card" key={rule.action}>
+          <div className="command-card__header"><div><strong>{rule.label}</strong><small>{rule.action === 'panic' ? 'Always enabled; restricted to owner or admin.' : 'Applies to both connected chat platforms.'}</small></div><label className="switch"><input type="checkbox" checked={rule.enabled} disabled={rule.action === 'panic'} onChange={(event) => changeCommand(rule.action, { enabled: event.target.checked })} /><span /></label></div>
+          <div className="command-grid"><label>Command<input value={rule.command} onChange={(event) => changeCommand(rule.action, { command: event.target.value })} /></label><label>Aliases <small>comma-separated</small><input value={rule.aliasesText ?? (rule.aliases || []).join(', ')} onChange={(event) => changeCommand(rule.action, { aliasesText: event.target.value })} placeholder="!mapa, !where" /></label><label>Minimum role<select value={rule.minimum_role} onChange={(event) => changeCommand(rule.action, { minimum_role: event.target.value })} disabled={rule.action === 'panic'}><option value="viewer">Viewer</option><option value="moderator">Moderator</option><option value="admin">Trusted admin</option><option value="owner">Channel owner</option></select></label><label>Cooldown (seconds)<input type="number" min="0" max="3600" value={rule.cooldown_seconds} onChange={(event) => changeCommand(rule.action, { cooldown_seconds: event.target.value })} /></label></div>
+          <div className="command-card__footer"><label className="checkbox-label"><input type="checkbox" checked={rule.response_enabled} onChange={(event) => changeCommand(rule.action, { response_enabled: event.target.checked })} /> Reply in chat</label><button type="button" onClick={() => saveCommand(rule)} disabled={savingCommand === rule.action}>{savingCommand === rule.action ? 'Saving...' : 'Save command'}</button></div>
+        </article>)}</div>
       </section>
       <section className="panel"><div className="panel__header"><h2>OBS overlays</h2><button onClick={createOverlay}>Create overlay</button></div>
         {overlayResult && <div className="alert alert--success"><strong>OBS URL created:</strong><br /><code>{`${window.location.origin}${overlayResult.overlay_path}`}</code></div>}
