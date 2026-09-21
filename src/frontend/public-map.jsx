@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
 import { useParams } from 'react-router-dom';
 import GpsMap from './gps-map.jsx';
 import ThemeToggle from './theme-toggle.jsx';
@@ -11,20 +10,31 @@ const PublicMap = () => {
 
   useEffect(() => {
     let cancelled = false;
-    const refresh = async () => {
-      try {
-        const response = await axios.get(`/api/v1/public-maps/${encodeURIComponent(shareId)}`);
-        if (!cancelled) { setDevice(response.data.device); setState('available'); }
-      } catch (error) {
-        if (!cancelled) {
-          if (error.response?.status === 404) { setDevice(null); setState('disabled'); }
-          else setState('reconnecting');
-        }
-      }
+    let stream;
+    let retryTimer;
+    const connect = () => {
+      if (cancelled) return;
+      setState((current) => current === 'disabled' ? 'reconnecting' : current);
+      stream = new EventSource(`/api/v1/public-maps/${encodeURIComponent(shareId)}/stream`);
+      stream.addEventListener('ready', (event) => {
+        if (cancelled) return;
+        setDevice(JSON.parse(event.data).device); setState('available');
+      });
+      stream.addEventListener('position', (event) => {
+        if (cancelled) return;
+        setDevice(JSON.parse(event.data).device); setState('available');
+      });
+      stream.addEventListener('disabled', () => {
+        if (cancelled) return;
+        stream?.close(); setDevice(null); setState('disabled');
+        retryTimer = window.setTimeout(connect, 10_000);
+      });
+      stream.onerror = () => {
+        if (!cancelled && state !== 'disabled') setState('reconnecting');
+      };
     };
-    refresh();
-    const timer = window.setInterval(refresh, 3000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    connect();
+    return () => { cancelled = true; stream?.close(); window.clearTimeout(retryTimer); };
   }, [shareId]);
 
   const position = device?.latitude == null ? [] : [device];

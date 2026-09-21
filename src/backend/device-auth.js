@@ -48,7 +48,7 @@ async function authenticateDevice(req, res, next) {
 
   try {
     const result = await pool.query(
-      `SELECT id, device_id, name, status, device_key_hash, owner_id
+      `SELECT id, device_id, name, status, device_key_hash, owner_id, public_share_id, public_share_enabled
        FROM devices
        WHERE device_id = $1`,
       [deviceId]

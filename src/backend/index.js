@@ -12,6 +12,8 @@ const app = express();
 const port = Number(process.env.PORT || 3000);
 const overlayStreams = new Map();
 const deviceStreams = new Map();
+const publicMapStreams = new Map();
+const publicMapCache = new Map();
 const ADMIN_SESSION_HOURS = 8;
 const LOGIN_WINDOW_MINUTES = 15;
 const MAX_LOGIN_FAILURES = 5;
@@ -285,6 +287,41 @@ function publishDeviceEvent(deviceId, event, data) {
   for (const response of listeners) writeSse(response, event, data);
 }
 
+function publishPublicMapEvent(shareId, event, data) {
+  const listeners = publicMapStreams.get(String(shareId));
+  if (!listeners) return;
+  for (const response of listeners) writeSse(response, event, data);
+}
+
+function disablePublicMapShare(shareId) {
+  if (!shareId) return;
+  const key = String(shareId);
+  publicMapCache.delete(key);
+  const listeners = publicMapStreams.get(key);
+  if (listeners) {
+    for (const response of listeners) { writeSse(response, 'disabled', {}); response.end(); }
+    publicMapStreams.delete(key);
+  }
+}
+
+async function getPublicMapDevice(shareId) {
+  const key = String(shareId);
+  const cached = publicMapCache.get(key);
+  if (cached) return cached;
+  const result = await pool.query(
+    `SELECT id, name, status, last_seen_at, last_latitude, last_longitude,
+            last_altitude, last_speed, last_heading, last_accuracy,
+            last_satellites, last_recorded_at
+     FROM devices WHERE public_share_id = $1 AND public_share_enabled = TRUE AND status = 'active'`,
+    [shareId]
+  );
+  const device = result.rows[0];
+  if (!device) return null;
+  const payload = overlayDeviceData({ ...device, device_id: undefined });
+  publicMapCache.set(key, payload);
+  return payload;
+}
+
 function escapeXml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -401,6 +438,12 @@ async function publishDevicePosition(device, position, sessionMetrics) {
   };
   publishDeviceEvent(device.id, 'position', { device: payload });
   for (const overlay of result.rows) publishOverlayEvent(overlay.id, 'position', { device: payload });
+  if (device.public_share_enabled && device.public_share_id) {
+    const { device_id: ignoredDeviceId, ...publicPayload } = payload;
+    const shareId = String(device.public_share_id);
+    publicMapCache.set(shareId, publicPayload);
+    publishPublicMapEvent(shareId, 'position', { device: publicPayload });
+  }
 }
 
 async function runRetentionCleanup(ownerId) {
@@ -917,6 +960,8 @@ app.patch('/api/v1/devices/:deviceId/public-sharing', authenticate, async (req, 
     );
     const sharing = result.rows[0];
     if (!sharing) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Active device not found');
+    if (sharing.public_share_enabled) publicMapCache.delete(String(sharing.public_share_id));
+    else disablePublicMapShare(sharing.public_share_id);
     await recordAudit(req, req.body.enabled ? 'public_sharing.enabled' : 'public_sharing.disabled', 'device', req.params.deviceId);
     res.json({ sharing, public_map_path: sharing.public_share_id ? `/map/${sharing.public_share_id}` : null });
   } catch (error) {
@@ -927,6 +972,7 @@ app.patch('/api/v1/devices/:deviceId/public-sharing', authenticate, async (req, 
 
 app.post('/api/v1/devices/:deviceId/public-sharing/rotate', authenticate, async (req, res) => {
   try {
+    const previous = await pool.query('SELECT public_share_id FROM devices WHERE device_id = $1 AND owner_id = $2 AND status = $3', [req.params.deviceId, req.user.sub, 'active']);
     const result = await pool.query(
       `UPDATE devices SET public_share_id = gen_random_uuid(), public_share_updated_at = NOW(), updated_at = NOW()
        WHERE device_id = $1 AND owner_id = $2 AND status = 'active'
@@ -935,6 +981,8 @@ app.post('/api/v1/devices/:deviceId/public-sharing/rotate', authenticate, async 
     );
     const sharing = result.rows[0];
     if (!sharing) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Active device not found');
+    disablePublicMapShare(previous.rows[0]?.public_share_id);
+    publicMapCache.delete(String(sharing.public_share_id));
     await recordAudit(req, 'public_sharing.link_regenerated', 'device', req.params.deviceId);
     res.json({ sharing, public_map_path: `/map/${sharing.public_share_id}` });
   } catch (error) {
@@ -945,22 +993,41 @@ app.post('/api/v1/devices/:deviceId/public-sharing/rotate', authenticate, async 
 
 app.get('/api/v1/public-maps/:shareId', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT name, status, last_seen_at, last_latitude, last_longitude,
-              last_altitude, last_speed, last_heading, last_accuracy,
-              last_satellites, last_recorded_at
-       FROM devices
-       WHERE public_share_id = $1 AND public_share_enabled = TRUE AND status = 'active'`,
-      [req.params.shareId]
-    );
-    const device = result.rows[0];
+    const device = await getPublicMapDevice(req.params.shareId);
     if (!device) return sendError(res, 404, 'PUBLIC_MAP_UNAVAILABLE', 'Location sharing is unavailable');
     res.set('Cache-Control', 'no-store');
-    res.json({ device: overlayDeviceData({ ...device, device_id: undefined }) });
+    res.json({ device });
   } catch (error) {
     if (error.code === '22P02') return sendError(res, 404, 'PUBLIC_MAP_UNAVAILABLE', 'Location sharing is unavailable');
     console.error('Public map error:', error.message);
     sendError(res, 500, 'PUBLIC_MAP_FAILED', 'Unable to load the public map');
+  }
+});
+
+app.get('/api/v1/public-maps/:shareId/stream', async (req, res) => {
+  try {
+    const device = await getPublicMapDevice(req.params.shareId);
+    if (!device) return sendError(res, 404, 'PUBLIC_MAP_UNAVAILABLE', 'Location sharing is unavailable');
+    const shareId = String(req.params.shareId);
+    res.status(200).set({
+      'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive',
+      'Content-Type': 'text/event-stream', 'X-Accel-Buffering': 'no'
+    });
+    res.flushHeaders();
+    if (!publicMapStreams.has(shareId)) publicMapStreams.set(shareId, new Set());
+    publicMapStreams.get(shareId).add(res);
+    writeSse(res, 'ready', { device });
+    const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 25_000);
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      const listeners = publicMapStreams.get(shareId);
+      listeners?.delete(res);
+      if (listeners?.size === 0) publicMapStreams.delete(shareId);
+    });
+  } catch (error) {
+    if (error.code === '22P02') return sendError(res, 404, 'PUBLIC_MAP_UNAVAILABLE', 'Location sharing is unavailable');
+    console.error('Public map stream error:', error.message);
+    if (!res.headersSent) sendError(res, 500, 'PUBLIC_MAP_STREAM_FAILED', 'Unable to open public map stream');
   }
 });
 
@@ -1404,6 +1471,8 @@ app.patch('/api/v1/device/public-sharing', authenticateDevice, async (req, res) 
     );
     await client.query('COMMIT');
     const sharing = result.rows[0];
+    if (sharing.public_share_enabled) publicMapCache.delete(String(sharing.public_share_id));
+    else disablePublicMapShare(sharing.public_share_id);
     await recordAudit(req, req.body.enabled ? 'public_sharing.device_enabled' : 'public_sharing.device_disabled', 'device', req.device.device_id);
     res.json({ sharing, public_map_path: sharing.public_share_id ? `/map/${sharing.public_share_id}` : null });
   } catch (error) {
