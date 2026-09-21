@@ -5,7 +5,7 @@ import './overlay-settings.css';
 import GpsMap, { mapAttributionLabel } from './gps-map.jsx';
 
 const OPTIONS = {
-  mapTheme: [['standard', 'Standard'], ['satellite', 'Satellite'], ['night', 'Night (OSM filter)']],
+  mapTheme: [['standard', 'Standard'], ['satellite', 'Satellite'], ['night', 'Night (OSM filter)'], ['transparent', 'Transparent IRL (experimental)']],
   textTheme: [['glass', 'Glass'], ['light', 'Light'], ['dark', 'Dark']],
   fontFamily: [['monospace', 'Standard (mono)'], ['Arial, sans-serif', 'Arial'], ['Roboto, sans-serif', 'Roboto'], ['Inter, sans-serif', 'Inter'], ['Oswald, sans-serif', 'Oswald']],
   mapShape: [['round', 'Round'], ['square', 'Square']]
