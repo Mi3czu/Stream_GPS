@@ -104,6 +104,7 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 .key-row label small { color: #64748b; font-weight: 500; }
 .key-field { display: flex; gap: 8px; }
 .key-field input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.key-field__secret { -webkit-text-security: disc; }
 .command-list { display: grid; gap: 12px; }
 .chat-commands-panel { padding: 0; }
 .chat-commands-panel__summary { align-items: center; cursor: pointer; display: flex; gap: 18px; justify-content: space-between; list-style: none; padding: 20px; user-select: none; }
