@@ -17,6 +17,9 @@ const publicMapCache = new Map();
 const ADMIN_SESSION_HOURS = 8;
 const LOGIN_WINDOW_MINUTES = 15;
 const MAX_LOGIN_FAILURES = 5;
+const MAX_GPS_SPEED_KMH = 500;
+const MAX_GPS_PAST_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_GPS_FUTURE_MS = 5 * 60 * 1000;
 
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is required');
@@ -487,8 +490,8 @@ function validateGpsPosition(body) {
     }
   }
 
-  if (position.speed !== undefined && position.speed < 0) {
-    return { error: 'INVALID_SPEED', message: 'speed cannot be negative' };
+  if (position.speed !== undefined && (position.speed < 0 || position.speed > MAX_GPS_SPEED_KMH)) {
+    return { error: 'INVALID_SPEED', message: `speed must be between 0 and ${MAX_GPS_SPEED_KMH} km/h` };
   }
   if (position.heading !== undefined && (position.heading < 0 || position.heading >= 360)) {
     return { error: 'INVALID_HEADING', message: 'heading must be between 0 and 360' };
@@ -507,6 +510,10 @@ function validateGpsPosition(body) {
   position.recordedAt = body.recorded_at ? new Date(body.recorded_at) : new Date();
   if (Number.isNaN(position.recordedAt.getTime())) {
     return { error: 'INVALID_TIMESTAMP', message: 'recorded_at must be a valid ISO-8601 timestamp' };
+  }
+  const timestampAge = position.recordedAt.getTime() - Date.now();
+  if (timestampAge < -MAX_GPS_PAST_AGE_MS || timestampAge > MAX_GPS_FUTURE_MS) {
+    return { error: 'GPS_TIMESTAMP_OUT_OF_RANGE', message: 'recorded_at is too old or too far in the future' };
   }
 
   return { position };
@@ -1489,10 +1496,18 @@ app.post('/api/v1/gps/update', authenticateDevice, async (req, res) => {
   const validated = validateGpsPosition(req.body);
   if (validated.error) return sendError(res, 400, validated.error, validated.message);
   const { position } = validated;
+  if (req.device.last_recorded_at && position.recordedAt.getTime() <= new Date(req.device.last_recorded_at).getTime()) {
+    return sendError(res, 409, 'GPS_POSITION_OUT_OF_ORDER', 'recorded_at must be newer than the last accepted position');
+  }
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
+    const latest = await client.query('SELECT last_recorded_at FROM devices WHERE id = $1 FOR UPDATE', [req.device.id]);
+    if (latest.rows[0]?.last_recorded_at && position.recordedAt.getTime() <= new Date(latest.rows[0].last_recorded_at).getTime()) {
+      await client.query('ROLLBACK');
+      return sendError(res, 409, 'GPS_POSITION_OUT_OF_ORDER', 'recorded_at must be newer than the last accepted position');
+    }
     await client.query('DELETE FROM request_nonces WHERE expires_at <= NOW()');
     await client.query(
       `INSERT INTO request_nonces (nonce, device_id, expires_at)

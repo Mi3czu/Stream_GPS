@@ -1,16 +1,18 @@
+import { lazy, Suspense } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
 import Login from './login.jsx';
 import Register from './register.jsx';
-import Dashboard from './dashboard';
-import Devices from './devices.jsx';
-import DeviceDetails from './device-details.jsx';
-import ObsOverlay from './obs-overlay.jsx';
-import OverlaySettings from './overlay-settings.jsx';
-import AuditLog from './audit-log.jsx';
-import AccountSettings from './account-settings.jsx';
 import AppShell from './app-shell.jsx';
 import ThemeToggle from './theme-toggle.jsx';
-import PublicMap from './public-map.jsx';
+
+const Dashboard = lazy(() => import('./dashboard.jsx'));
+const Devices = lazy(() => import('./devices.jsx'));
+const DeviceDetails = lazy(() => import('./device-details.jsx'));
+const ObsOverlay = lazy(() => import('./obs-overlay.jsx'));
+const OverlaySettings = lazy(() => import('./overlay-settings.jsx'));
+const AuditLog = lazy(() => import('./audit-log.jsx'));
+const AccountSettings = lazy(() => import('./account-settings.jsx'));
+const PublicMap = lazy(() => import('./public-map.jsx'));
 
 function Home() {
   return (
@@ -33,7 +35,7 @@ function Home() {
 
 export default function App() {
   return (
-    <Routes>
+    <Suspense fallback={<main className="route-loading">Loading…</main>}><Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
@@ -47,6 +49,6 @@ export default function App() {
         <Route path="/audit-log" element={<AuditLog />} />
         <Route path="/account" element={<AccountSettings />} />
       </Route>
-    </Routes>
+    </Routes></Suspense>
   );
 }

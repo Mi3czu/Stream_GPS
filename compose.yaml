@@ -45,6 +45,7 @@ services:
       POSTGRES_DB: stream_gps
       POSTGRES_USER: stream_gps
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}
+      POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-10}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
       PORT: 3000
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}

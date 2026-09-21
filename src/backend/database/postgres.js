@@ -13,6 +13,13 @@ if (!databaseUrl) {
   throw new Error('DATABASE_URL or POSTGRES_PASSWORD is required');
 }
 
-const pool = new Pool({ connectionString: databaseUrl });
+const pool = new Pool({
+  connectionString: databaseUrl,
+  // A small VPS should reserve database connections for actual work rather than
+  // allowing request bursts to create an unbounded number of PostgreSQL workers.
+  max: Math.min(Math.max(Number(process.env.POSTGRES_POOL_MAX || 10), 2), 30),
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000
+});
 
 module.exports = { pool };

@@ -86,6 +86,28 @@ Create a PostgreSQL backup on the Docker host:
 
 The custom-format dump is written to the ignored `backups/` directory. To restore it into a deliberately prepared empty database, use `pg_restore` inside the PostgreSQL container; do not restore over a production database without a separate, verified backup.
 
+On a Linux production host, use the equivalent scripts:
+
+```bash
+./scripts/backup-postgres.sh
+# Restore is destructive and asks for an explicit RESTORE confirmation.
+./scripts/restore-postgres.sh /absolute/path/to/stream-gps-YYYYMMDD-HHMMSS.dump
+```
+
+Schedule the backup outside the repository checkout only after testing a restore. For example, a daily 03:20 UTC job with 21-day retention:
+
+```cron
+20 3 * * * BACKUP_DIR=/srv/stream-gps-backups RETENTION_DAYS=21 /srv/stream-gps/scripts/backup-postgres.sh >> /var/log/stream-gps-backup.log 2>&1
+```
+
+Copy the resulting dumps to storage outside the VPS. VPS snapshots are useful, but do not replace a PostgreSQL dump you have verified can be restored.
+
+## Production capacity defaults
+
+The backend uses a small PostgreSQL connection pool (`POSTGRES_POOL_MAX=10` by default), suitable for a single 2 vCPU / 4 GB VPS. Keep the database private to Docker and increase this only after measuring connection wait time and database load.
+
+GPS updates reject timestamps older than seven days, more than five minutes in the future, timestamps older than the last accepted position, and speeds above 500 km/h. These conservative bounds prevent a stale queue or corrupted modem data from moving the public map backwards or across the world.
+
 ## GPS update API
 
 Interactive API documentation is available at `/api/docs`; the source OpenAPI document is available at `/api/openapi.yaml`.
