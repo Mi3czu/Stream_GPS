@@ -186,6 +186,15 @@ const DeviceDetails = () => {
     catch (requestError) { setError(requestError.response?.data?.message || requestError.message); }
   };
 
+  const namesForCommand = (rule) => [rule.command, ...(String(rule.aliasesText ?? (rule.aliases || []).join(', ')).split(','))]
+    .map((name) => name.trim().toLowerCase()).filter(Boolean);
+  const commandConflict = (rule) => {
+    const names = namesForCommand(rule);
+    if (new Set(names).size !== names.length) return 'The command and aliases must be unique.';
+    const conflict = chatCommands.find((other) => other.action !== rule.action && namesForCommand(other).some((name) => names.includes(name)));
+    return conflict ? `Already used by ${conflict.label}.` : null;
+  };
+
   if (loading && !device) return <main><p>Loading device...</p></main>;
   const publicMapUrl = device?.public_share_id ? `${window.location.origin}/map/${device.public_share_id}` : null;
   return <main>
@@ -217,7 +226,8 @@ const DeviceDetails = () => {
         <div className="command-list">{chatCommands.map((rule) => <article className="command-card" key={rule.action}>
           <div className="command-card__header"><div><strong>{rule.label}</strong><small>{rule.action === 'panic' ? 'Always enabled; restricted to owner or admin.' : 'Applies to both connected chat platforms.'}</small></div><label className="switch"><input type="checkbox" checked={rule.enabled} disabled={rule.action === 'panic'} onChange={(event) => changeCommand(rule.action, { enabled: event.target.checked })} /><span /></label></div>
           <div className="command-grid"><label>Command<input value={rule.command} onChange={(event) => changeCommand(rule.action, { command: event.target.value })} /></label><label>Aliases <small>comma-separated</small><input value={rule.aliasesText ?? (rule.aliases || []).join(', ')} onChange={(event) => changeCommand(rule.action, { aliasesText: event.target.value })} placeholder="!mapa, !where" /></label><label>Minimum role<select value={rule.minimum_role} onChange={(event) => changeCommand(rule.action, { minimum_role: event.target.value })} disabled={rule.action === 'panic'}><option value="viewer">Viewer</option><option value="moderator">Moderator</option><option value="admin">Trusted admin</option><option value="owner">Channel owner</option></select></label><label>Cooldown (seconds)<input type="number" min="0" max="3600" value={rule.cooldown_seconds} onChange={(event) => changeCommand(rule.action, { cooldown_seconds: event.target.value })} /></label></div>
-          <div className="command-card__footer"><label className="checkbox-label"><input type="checkbox" checked={rule.response_enabled} onChange={(event) => changeCommand(rule.action, { response_enabled: event.target.checked })} /> Reply in chat</label><button type="button" onClick={() => saveCommand(rule)} disabled={savingCommand === rule.action}>{savingCommand === rule.action ? 'Saving...' : 'Save command'}</button></div>
+          {commandConflict(rule) && <p className="command-card__error">{commandConflict(rule)}</p>}
+          <div className="command-card__footer"><label className="checkbox-label"><input type="checkbox" checked={rule.response_enabled} onChange={(event) => changeCommand(rule.action, { response_enabled: event.target.checked })} /> Reply in chat</label><button type="button" onClick={() => saveCommand(rule)} disabled={savingCommand === rule.action || Boolean(commandConflict(rule))}>{savingCommand === rule.action ? 'Saving...' : 'Save command'}</button></div>
         </article>)}</div>
       </section>
       <section className="panel"><div className="panel__header"><h2>OBS overlays</h2><button onClick={createOverlay}>Create overlay</button></div>

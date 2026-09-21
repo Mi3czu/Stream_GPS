@@ -99,13 +99,68 @@ app.get('/api/v1/chat/integrations', authenticate, async (req, res) => {
       `SELECT id, platform, enabled, channel_id, channel_name, settings, created_at, updated_at
        FROM chat_integrations WHERE owner_id = $1 ORDER BY platform`, [req.user.sub]
     );
+    const admins = await pool.query(
+      `SELECT u.id, u.integration_id, u.platform_user_id, u.username, u.role
+       FROM chat_authorized_users u JOIN chat_integrations i ON i.id = u.integration_id
+       WHERE i.owner_id = $1 ORDER BY u.created_at`, [req.user.sub]
+    );
     const integrations = ['kick', 'twitch'].map((platform) => ({
-      platform, ...chatConfiguration(platform), integration: result.rows.find((row) => row.platform === platform) || null
+      platform, ...chatConfiguration(platform), integration: (() => {
+        const integration = result.rows.find((row) => row.platform === platform);
+        return integration ? { ...integration, authorized_users: admins.rows.filter((user) => user.integration_id === integration.id) } : null;
+      })()
     }));
     res.json({ integrations });
   } catch (error) {
     console.error('Chat integrations read error:', error.message);
     sendError(res, 500, 'CHAT_INTEGRATIONS_READ_FAILED', 'Unable to load chat integrations');
+  }
+});
+
+app.post('/api/v1/chat/integrations/:platform/admins', authenticate, async (req, res) => {
+  const platform = String(req.params.platform || '').toLowerCase();
+  const platformUserId = String(req.body.platform_user_id || '').trim();
+  const username = String(req.body.username || '').trim();
+  if (!['kick', 'twitch'].includes(platform)) return sendError(res, 404, 'CHAT_PLATFORM_UNKNOWN', 'Unknown chat platform');
+  if (!/^[A-Za-z0-9_-]{1,100}$/.test(platformUserId) || (username && username.length > 100)) {
+    return sendError(res, 400, 'CHAT_ADMIN_INVALID', 'A platform user ID is required and may only contain letters, numbers, underscores, and hyphens');
+  }
+  try {
+    const integrationResult = await pool.query(
+      `INSERT INTO chat_integrations (owner_id, platform)
+       VALUES ($1, $2) ON CONFLICT (owner_id, platform) DO UPDATE SET updated_at = NOW()
+       RETURNING id`, [req.user.sub, platform]
+    );
+    const result = await pool.query(
+      `INSERT INTO chat_authorized_users (integration_id, platform_user_id, username, role)
+       VALUES ($1, $2, $3, 'admin')
+       ON CONFLICT (integration_id, platform_user_id) DO UPDATE SET username = EXCLUDED.username
+       RETURNING id, integration_id, platform_user_id, username, role`,
+      [integrationResult.rows[0].id, platformUserId, username || null]
+    );
+    await recordAudit(req, 'chat.admin.saved', 'chat_integration', platform, { platform_user_id: platformUserId });
+    res.status(201).json({ admin: result.rows[0] });
+  } catch (error) {
+    console.error('Chat admin save error:', error.message);
+    sendError(res, 500, 'CHAT_ADMIN_SAVE_FAILED', 'Unable to save trusted chat admin');
+  }
+});
+
+app.delete('/api/v1/chat/integrations/:platform/admins/:adminId', authenticate, async (req, res) => {
+  const platform = String(req.params.platform || '').toLowerCase();
+  if (!['kick', 'twitch'].includes(platform)) return sendError(res, 404, 'CHAT_PLATFORM_UNKNOWN', 'Unknown chat platform');
+  try {
+    const result = await pool.query(
+      `DELETE FROM chat_authorized_users u USING chat_integrations i
+       WHERE u.id = $1 AND u.integration_id = i.id AND i.owner_id = $2 AND i.platform = $3
+       RETURNING u.id`, [req.params.adminId, req.user.sub, platform]
+    );
+    if (!result.rows[0]) return sendError(res, 404, 'CHAT_ADMIN_NOT_FOUND', 'Trusted chat admin not found');
+    await recordAudit(req, 'chat.admin.removed', 'chat_integration', platform);
+    res.json({ message: 'Trusted chat admin removed' });
+  } catch (error) {
+    console.error('Chat admin delete error:', error.message);
+    sendError(res, 500, 'CHAT_ADMIN_DELETE_FAILED', 'Unable to remove trusted chat admin');
   }
 });
 
@@ -804,6 +859,11 @@ app.get('/api/v1/devices/:deviceId/chat-commands', authenticate, async (req, res
     const device = deviceResult.rows[0];
     if (!device) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Unknown device');
     await ensureDeviceChatRules(device.id);
+    const existingRules = await pool.query('SELECT action, command, aliases FROM device_chat_command_rules WHERE device_id = $1 AND action <> $2', [device.id, action]);
+    const requestedNames = new Set([rule.command, ...rule.aliases]);
+    const conflict = existingRules.rows.find((existing) => [existing.command, ...(Array.isArray(existing.aliases) ? existing.aliases : [])]
+      .some((name) => requestedNames.has(String(name).toLowerCase())));
+    if (conflict) return sendError(res, 409, 'CHAT_COMMAND_CONFLICT', `A command or alias is already used by ${conflict.action}`);
     const result = await pool.query(
       `SELECT action, enabled, command, aliases, minimum_role, cooldown_seconds, response_enabled, updated_at
        FROM device_chat_command_rules WHERE device_id = $1`, [device.id]

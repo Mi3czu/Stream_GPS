@@ -81,6 +81,7 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 .command-card__header, .command-card__footer { align-items: center; display: flex; gap: 14px; justify-content: space-between; }
 .command-card__header small { color: #64748b; display: block; font-size: .78rem; margin-top: 4px; }
 .command-card__footer { border-top: 1px solid #e2e8f0; margin-top: 14px; padding-top: 12px; }
+.command-card__error { color: #b42318; font-size: .8rem; font-weight: 650; margin: 12px 0 0; }
 .command-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 14px; }
 .command-grid label { color: #475569; display: grid; font-size: .78rem; font-weight: 700; gap: 5px; }
 .command-grid label small { color: #64748b; font-weight: 500; }
@@ -93,6 +94,11 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 .switch input:checked + span { background: #1769d2; }
 .switch input:checked + span::after { transform: translateX(18px); }
 .switch input:disabled + span { cursor: not-allowed; opacity: .65; }
+.chat-admins { border-top: 1px solid #e2e8f0; margin-top: 14px; padding-top: 14px; }
+.chat-admin-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chat-admin-form input { flex: 1 1 160px; }
+.chat-admins ul { display: grid; gap: 7px; list-style: none; margin: 12px 0; padding: 0; }
+.chat-admins li { align-items: center; display: flex; flex-wrap: wrap; font-size: .86rem; gap: 8px; }
 .obs-link { margin: 14px 0; }
 .obs-link code { background: #f1f5f9; border-radius: 6px; display: block; margin-top: 10px; overflow-wrap: anywhere; padding: 10px; }
 .public-map-page { margin: 0 auto; max-width: 1100px; min-height: 100vh; padding: 32px 22px; }
@@ -135,6 +141,7 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 :root[data-theme='dark'] .obs-link code { background: #0f1726; }
 :root[data-theme='dark'] .command-card { background: #0f1726; border-color: #28364b; }
 :root[data-theme='dark'] .command-card__footer { border-color: #28364b; }
+:root[data-theme='dark'] .chat-admins { border-color: #28364b; }
 :root[data-theme='dark'] .command-grid label { color: #c8d5e7; }
 :root[data-theme='dark'] .share-link,
 :root[data-theme='dark'] .public-map-page__stats span { background: #121b2b; border-color: #28364b; }

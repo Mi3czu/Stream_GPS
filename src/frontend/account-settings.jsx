@@ -13,6 +13,7 @@ const AccountSettings = () => {
   const [error, setError] = useState(null);
   const [retentionDays, setRetentionDays] = useState('forever');
   const [chatIntegrations, setChatIntegrations] = useState([]);
+  const [chatAdminForms, setChatAdminForms] = useState({ kick: { platform_user_id: '', username: '' }, twitch: { platform_user_id: '', username: '' } });
 
   const token = sessionStorage.getItem('accessToken');
   const headers = { Authorization: `Bearer ${token}` };
@@ -80,6 +81,27 @@ const AccountSettings = () => {
     try {
       await axios.delete(`/api/v1/chat/integrations/${platform}`, { headers });
       setMessage(`${platform} chat integration disconnected.`);
+      await loadAccount();
+    } catch (requestError) {
+      if (!handleUnauthorized(requestError)) setError(requestError.response?.data?.message || requestError.message);
+    }
+  };
+
+  const saveChatAdmin = async (platform) => {
+    const form = chatAdminForms[platform];
+    try {
+      await axios.post(`/api/v1/chat/integrations/${platform}/admins`, form, { headers });
+      setChatAdminForms((current) => ({ ...current, [platform]: { platform_user_id: '', username: '' } }));
+      setMessage(`Trusted ${platform} admin saved.`);
+      await loadAccount();
+    } catch (requestError) {
+      if (!handleUnauthorized(requestError)) setError(requestError.response?.data?.message || requestError.message);
+    }
+  };
+
+  const removeChatAdmin = async (platform, adminId) => {
+    try {
+      await axios.delete(`/api/v1/chat/integrations/${platform}/admins/${adminId}`, { headers });
       await loadAccount();
     } catch (requestError) {
       if (!handleUnauthorized(requestError)) setError(requestError.response?.data?.message || requestError.message);
@@ -155,7 +177,8 @@ const AccountSettings = () => {
           {chatIntegrations.map(({ platform, configured, callback_path: callbackPath, integration }) => (
             <article className="device-card" key={platform}>
               <div className="device-card__top"><strong>{platform === 'kick' ? 'Kick' : 'Twitch'}</strong><span className={`status-pill ${integration?.enabled ? 'status-pill--online' : 'status-pill--offline'}`}>{integration?.enabled ? 'enabled' : 'not connected'}</span></div>
-              {integration ? <><p className="panel__hint">Channel: {integration.channel_name || integration.channel_id || 'not available'}. Disconnecting permanently removes this platform connection and its chat permission list.</p><button className="button--danger" type="button" onClick={() => disconnectChat(platform)}>Disconnect and remove</button></> : configured ? <p className="panel__hint">Server credentials are present. OAuth connection UI will be enabled after the external app callback is configured.</p> : <p className="panel__hint">Not configured on this server yet. Add the OAuth client ID, client secret and public HTTPS address before connecting.</p>}
+              {integration?.channel_id ? <><p className="panel__hint">Channel: {integration.channel_name || integration.channel_id}. Disconnecting permanently removes this platform connection and its chat permission list.</p><button className="button--danger" type="button" onClick={() => disconnectChat(platform)}>Disconnect and remove</button></> : configured ? <p className="panel__hint">Server credentials are present. OAuth connection UI will be enabled after the external app callback is configured.</p> : <p className="panel__hint">Not connected yet. Add server OAuth credentials and a public HTTPS address before enabling live chat control.</p>}
+              <div className="chat-admins"><strong>Trusted admins</strong><p className="panel__hint">Use a stable platform user ID, not only a nickname. These users can be granted command access per device.</p><div className="chat-admin-form"><input value={chatAdminForms[platform].platform_user_id} onChange={(event) => setChatAdminForms((current) => ({ ...current, [platform]: { ...current[platform], platform_user_id: event.target.value } }))} placeholder="Platform user ID" /><input value={chatAdminForms[platform].username} onChange={(event) => setChatAdminForms((current) => ({ ...current, [platform]: { ...current[platform], username: event.target.value } }))} placeholder="Nickname (optional)" /><button type="button" onClick={() => saveChatAdmin(platform)}>Add admin</button></div><ul>{integration?.authorized_users?.map((admin) => <li key={admin.id}><code>{admin.platform_user_id}</code>{admin.username ? ` — ${admin.username}` : ''}<button className="button--secondary button--small" type="button" onClick={() => removeChatAdmin(platform, admin.id)}>Remove</button></li>) || <li>No trusted admins added.</li>}</ul></div>
               <small>Callback path: <code>{callbackPath}</code></small>
             </article>
           ))}
