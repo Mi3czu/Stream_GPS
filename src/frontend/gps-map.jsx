@@ -48,7 +48,10 @@ const MAP_TILES = {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   },
   dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    // Keep this on the legacy raster endpoint. It is a public CARTO basemap,
+    // unlike CARTO's newer API endpoints, which return "API KEY REQUIRED"
+    // when called without a project token.
+    url: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
   },
   satellite: {
