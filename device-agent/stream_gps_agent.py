@@ -141,6 +141,10 @@ def parse_mmcli(text):
             elif kind == 'GGA' and len(fields) >= 10 and fields[6] not in ('', '0'):
                 nmea.setdefault('latitude', nmea_coordinate(fields[2], fields[3])); nmea.setdefault('longitude', nmea_coordinate(fields[4], fields[5]))
                 if fields[7]: nmea['satellites'] = int(fields[7])
+                # ModemManager does not expose a metre accuracy value on every
+                # modem. GGA includes HDOP, from which a conservative GPS
+                # accuracy estimate can be derived using a 5 m UERE.
+                if fields[8]: nmea['accuracy'] = round(float(fields[8]) * 5, 1)
                 if fields[9]: nmea['altitude'] = float(fields[9])
         except (ValueError, IndexError): pass
     latitude = number('modem.location.gps.latitude')
