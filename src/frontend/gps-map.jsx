@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import {
   CircleMarker,
   MapContainer,
@@ -48,11 +48,10 @@ const MAP_TILES = {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   },
   dark: {
-    // Browser requests go through our cacheable proxy. Some client networks
-    // receive an "API KEY REQUIRED" image from CARTO's legacy public endpoint
-    // even though the tile is available server-to-server.
-    url: '/api/v1/map-tiles/carto/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    // Rendered by MapLibre/OpenFreeMap below. This fallback is never shown,
+    // but keeps the object safe if a theme is added without the vector view.
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   },
   satellite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -61,10 +60,13 @@ const MAP_TILES = {
 };
 
 export const mapAttributionLabel = (mapTheme) => {
+  if (mapTheme === 'dark') return '© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors';
   if (mapTheme === 'satellite') return 'Tiles © Esri';
   if (mapTheme === 'dark') return '© OpenStreetMap contributors © CARTO';
   return '© OpenStreetMap contributors';
 };
+
+const VectorDarkMap = lazy(() => import('./dark-vector-map.jsx'));
 
 const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, zoomControl = true, attributionControl = true, mapOpacity = 100 }) => {
   const validPositions = positions.filter((position) => (
@@ -73,6 +75,15 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
   const points = validPositions.map((position) => [Number(position.latitude), Number(position.longitude)]);
   const latestPosition = validPositions[validPositions.length - 1];
   const tiles = MAP_TILES[mapTheme] || MAP_TILES.standard;
+
+  if (mapTheme === 'dark') {
+    return (
+      <div className="gps-map" style={size ? { '--gps-map-size': `${size}px` } : undefined} aria-label="GPS map">
+        <Suspense fallback={<div className="gps-map__vector" aria-label="Loading dark map" />}><VectorDarkMap points={points} speed={latestPosition?.speed} zoomConfig={zoomConfig} connectPoints={connectPoints} zoomControl={zoomControl} attributionControl={attributionControl} mapOpacity={mapOpacity} /></Suspense>
+        {!points.length && <p className="gps-map__empty">No GPS positions have been received yet.</p>}
+      </div>
+    );
+  }
 
   return (
     <div className="gps-map" style={size ? { '--gps-map-size': `${size}px` } : undefined} aria-label="GPS map">

@@ -87,37 +87,6 @@ async function sendPasswordResetEmail({ email, username, resetUrl }) {
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 
-// CARTO's legacy raster endpoint is not consistent across browser networks: in
-// some locations it responds with an "API KEY REQUIRED" image despite serving
-// the same public tile to a server request. Proxying the tiles keeps the
-// browser independent from that behaviour and preserves one cacheable URL for
-// the dashboard, public map and OBS browser source.
-app.get('/api/v1/map-tiles/carto/:z/:x/:y.png', async (req, res) => {
-  const z = Number(req.params.z);
-  const x = Number(req.params.x);
-  const y = Number(req.params.y);
-  const maximumTile = Number.isInteger(z) && z >= 0 && z <= 20 ? (2 ** z) - 1 : -1;
-  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x > maximumTile || y > maximumTile) {
-    return sendError(res, 400, 'MAP_TILE_INVALID', 'Invalid map tile coordinates');
-  }
-  if (isPublicRateLimited(`carto-tile:${req.ip}`, 300, 60 * 1000)) {
-    return sendError(res, 429, 'MAP_TILE_RATE_LIMITED', 'Too many map tile requests');
-  }
-  try {
-    const response = await fetch(`https://a.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`, {
-      headers: { 'User-Agent': 'Stream-GPS/1.0 map tile proxy' },
-      signal: AbortSignal.timeout(8_000)
-    });
-    const contentType = response.headers.get('content-type') || '';
-    if (!response.ok || !contentType.startsWith('image/')) throw new Error(`CARTO tile response ${response.status}`);
-    res.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-    res.type(contentType).send(Buffer.from(await response.arrayBuffer()));
-  } catch (error) {
-    console.error('CARTO tile proxy error:', error.message);
-    sendError(res, 502, 'MAP_TILE_UNAVAILABLE', 'Dark map tiles are temporarily unavailable');
-  }
-});
-
 function chatConfiguration(platform) {
   const upper = platform.toUpperCase();
   return {
