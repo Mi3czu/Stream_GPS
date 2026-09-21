@@ -12,6 +12,7 @@ UPDATE_STATUS_PATH = STATE_DIR / 'update-status.json'
 STATUS = {'started_at': time.time(), 'modem': None, 'modem_info': {}, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0}
 LOCK = threading.Lock()
 DEFAULT_UPDATE_BASE = 'https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/device-agent'
+GITHUB_HEAD_API = 'https://api.github.com/repos/Mi3czu/Stream_GPS/commits/main'
 UPDATE_FILES = ('stream_gps_agent.py', 'stream-gps-device', 'stream-gps-device.service', 'VERSION')
 CPU_SAMPLE = None
 
@@ -57,6 +58,19 @@ def update_base(config=None):
     if not base.startswith('https://'): raise ValueError('Update URL must use HTTPS')
     return base
 
+def release_base(config=None):
+    base = update_base(config)
+    # A branch URL is mutable and can be served from independent CDN caches.
+    # Resolve it once to a commit URL, so VERSION, manifest and files always
+    # come from the same immutable repository snapshot.
+    github_release = re.fullmatch(r'https://raw\.githubusercontent\.com/Mi3czu/Stream_GPS/(?:main|[0-9a-f]{40})/device-agent', base)
+    if not github_release:
+        return base
+    payload = json.loads(download(GITHUB_HEAD_API).decode('utf-8'))
+    commit = str(payload.get('sha', ''))
+    if not re.fullmatch(r'[0-9a-f]{40}', commit): raise RuntimeError('GitHub did not return a valid release commit')
+    return f'https://raw.githubusercontent.com/Mi3czu/Stream_GPS/{commit}/device-agent'
+
 def download(url, timeout=20):
     request = urllib.request.Request(url, headers={'User-Agent': 'Stream-GPS-Device-Updater/1.0'})
     with urllib.request.urlopen(request, timeout=timeout) as response: return response.read()
@@ -79,13 +93,14 @@ def update_download_size(base):
     return sum(sizes) if all(size is not None for size in sizes) else None
 
 def check_update(config=None, include_download_size=True):
-    base = update_base(config)
+    base = release_base(config)
     available = download(base + '/VERSION').decode('utf-8').strip()
     version_tuple(available)
     installed = current_version()
     update_available = version_tuple(available) > version_tuple(installed)
     return {'installed': installed, 'available': available, 'update_available': update_available,
-            'download_bytes': update_download_size(base) if update_available and include_download_size else None}
+            'download_bytes': update_download_size(base) if update_available and include_download_size else None,
+            'release_base': base}
 
 def apply_update():
     save_update_status('downloading')
@@ -97,7 +112,7 @@ def apply_update():
     save_update_status('succeeded', version=version or current_version())
 
 def _apply_update():
-    config = load_config(); base = update_base(config); release = check_update(config, include_download_size=False)
+    config = load_config(); release = check_update(config, include_download_size=False); base = release['release_base']
     if not release['update_available']:
         print('No update available'); return
     names = UPDATE_FILES
