@@ -1,15 +1,15 @@
-# Stream GPS Device — samodzielna instalacja na Belaboxie
+# Stream GPS Device — samodzielna instalacja na komputerze urządzenia
 
-Ten klient działa jako osobna usługa systemowa. **Nie modyfikuje BelaUI, nie patchuje `belaUI.js` i nie korzysta z interfejsu BelaUI.** Aktualizacja BelaUI nie powinna go usunąć. Własny panel klienta działa domyślnie na porcie `26666`.
+Ten klient działa jako osobna usługa systemowa. **Nie modyfikuje istniejącego oprogramowania urządzenia ani nie korzysta z jego interfejsu.** Własny panel klienta działa domyślnie na porcie `26666` i pozostaje niezależny od aktualizacji systemu urządzenia.
 
 ## Co będzie potrzebne
 
-- Belabox z dostępem SSH i systemem używającym `systemd`.
+- Komputer urządzenia z dostępem SSH i systemem używającym `systemd`.
 - Modem 4G/5G z obsługą GNSS, widoczny w ModemManagerze.
 - Antena podłączona do portu GNSS modemu. Port antenowy sieci komórkowej nie zawsze obsługuje GNSS.
-- Działający serwer Stream GPS dostępny z Belaboxa przez HTTPS.
+- Działający serwer Stream GPS dostępny z komputera urządzenia przez HTTPS.
 - `DEVICE_ID` i `DEVICE_KEY` utworzone na stronie **Devices**.
-- Komputer w tej samej zaufanej sieci co Belabox, jeżeli panel `:26666` ma być otwierany bez tunelu SSH.
+- Komputer w tej samej zaufanej sieci co urządzenie, jeżeli panel `:26666` ma być otwierany bez tunelu SSH.
 
 GPS może uzyskać pozycję bez karty SIM, ale pierwszy fix po zimnym starcie może potrwać kilka lub kilkanaście minut. Najlepiej przeprowadzić test przy oknie lub na zewnątrz.
 
@@ -27,7 +27,7 @@ Po pierwszym poprawnym połączeniu klucz można później podejrzeć i skopiowa
 
 ## 2. Sprawdzenie modemu przed instalacją
 
-Połącz się z Belaboxem przez SSH i wykonaj:
+Połącz się z komputerem urządzenia przez SSH i wykonaj:
 
 ```sh
 mmcli -L
@@ -45,7 +45,7 @@ Jeśli numer modemu jest inny niż `0`, użyj numeru pokazanego przez `mmcli -L`
 
 ## 3. Instalacja zalecana — szybka
 
-Połącz się z Belaboxem przez SSH i wklej jedną komendę:
+Połącz się z komputerem urządzenia przez SSH i wklej jedną komendę:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/installer/install-device.sh -o /tmp/install-stream-gps-device.sh && sudo sh /tmp/install-stream-gps-device.sh
@@ -73,10 +73,10 @@ Instalator:
 
 ## 4. Otwieranie własnego panelu konfiguracyjnego
 
-Na komputerze w tej samej sieci otwórz ten sam adres IP Belaboxa, którego użyłeś do połączenia SSH, z dopisanym portem `26666`:
+Na komputerze w tej samej sieci otwórz ten sam adres IP urządzenia, którego użyłeś do połączenia SSH, z dopisanym portem `26666`:
 
 ```text
-http://ADRES_BELABOXA:26666
+http://<computer_ip>:26666
 ```
 
 Sekcja **Viewer privacy** pozwala w dowolnym momencie włączyć lub zatrzymać publiczne udostępnianie bieżącej pozycji dla widzów. Wyłączenie publicznej mapy nie zatrzymuje wysyłania GPS do prywatnego dashboardu. Tworzenie, kopiowanie i regenerowanie publicznego linku pozostaje dostępne wyłącznie w głównym panelu Stream GPS.
@@ -98,7 +98,7 @@ Panel pokazuje modem, stan fixa GPS, rozmiar kolejki i ostatni błąd. Pozwala z
 
 Agent odczytuje pola surowej lokalizacji ModemManagera i zdania NMEA RMC/GGA. Dzięki temu potrafi uzyskać prędkość w km/h, kierunek, wysokość oraz liczbę satelitów także wtedy, gdy modem nie wystawia ich jako osobnych pól `mmcli`.
 
-Port `26666` nie jest typowym portem BelaUI ani standardowych usług systemowych. Sprawdzenie konfliktu:
+Port `26666` nie jest typowym portem systemowym. Sprawdzenie konfliktu:
 
 ```sh
 sudo ss -ltnp | grep ':26666'
@@ -111,7 +111,7 @@ Jeżeli przed instalacją widoczny jest inny proces, zmień `ui_port` w `/etc/st
 Panel używa HTTP i nie powinien być wystawiany bezpośrednio do internetu. Zamiast otwierać port na routerze użyj tunelu SSH:
 
 ```powershell
-ssh -L 26666:127.0.0.1:26666 USER@ADRES_BELABOXA
+ssh -L 26666:127.0.0.1:26666 USER@ADRES_KOMPUTERA
 ```
 
 Następnie otwórz `http://127.0.0.1:26666`. Do publicznego dostępu należy później dodać HTTPS/VPN, nie przekierowanie portu.
@@ -207,7 +207,7 @@ less /tmp/install-stream-gps-device.sh
 sudo sh /tmp/install-stream-gps-device.sh --upgrade
 ```
 
-Tryb `--upgrade` zachowuje konfigurację, hasło panelu, klucz urządzenia oraz kolejkę GPS, dlatego nie prosi ponownie o jednorazowy `DEVICE_KEY`. Aktualizacja BelaUI nie wymaga ponownej instalacji klienta Stream GPS.
+Tryb `--upgrade` zachowuje konfigurację, hasło panelu, klucz urządzenia oraz kolejkę GPS, dlatego nie prosi ponownie o `DEVICE_KEY`. Aktualizacja oprogramowania urządzenia nie wymaga ponownej instalacji klienta Stream GPS.
 
 ## Najczęstsze problemy
 

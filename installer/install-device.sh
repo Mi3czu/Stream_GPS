@@ -66,7 +66,7 @@ if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -q ':26666 ' && !
   echo "Port 26666 is already used by another service. Installation stopped."; exit 1
 fi
 
-echo "This standalone agent does not modify BelaUI."
+echo "This standalone agent does not modify existing device software."
 if [ "$MODE" = install ]; then
   printf "Password for local configuration panel (minimum 12 characters, input hidden): "; stty -echo; read -r UI_PASSWORD; stty echo; printf '\n'
   [ "${#UI_PASSWORD}" -ge 12 ] || { echo "Panel password must contain at least 12 characters"; exit 1; }
@@ -109,7 +109,7 @@ fi
 IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 echo "Installation complete."
 echo "Agent version: $(cat "$INSTALL_DIR/VERSION")"
-echo "Configuration panel: http://${IP:-BELABOX-IP}:26666"
+echo "Configuration panel: http://${IP:-COMPUTER-IP}:26666"
 echo "Login name: admin"
 [ "$MODE" != install ] || echo "Use the panel password entered during installation, then connect Stream GPS in the local panel."
 echo "Run diagnostics: sudo stream-gps-device test"
