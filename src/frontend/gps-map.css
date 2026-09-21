@@ -15,11 +15,6 @@
   filter: brightness(0.62) contrast(1.15) grayscale(0.35) invert(1) hue-rotate(180deg) saturate(0.65);
 }
 
-/* A high-contrast, monochrome treatment that needs no provider key. */
-.gps-map__leaflet--mono .leaflet-tile-pane {
-  filter: grayscale(1) invert(1) contrast(2.1) brightness(0.9);
-}
-
 .gps-map__empty {
   background: rgba(255, 255, 255, 0.88);
   border-radius: 6px;
