@@ -19,6 +19,9 @@ def save_config(config):
     temporary.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     os.chmod(temporary, 0o600); temporary.replace(CONFIG_PATH)
 
+def configured(config):
+    return bool(str(config.get('api_url', '')).strip() and str(config.get('device_id', '')).strip() and str(config.get('device_key', '')).strip())
+
 def current_version():
     try: return (Path(__file__).resolve().parent / 'VERSION').read_text(encoding='utf-8').strip()
     except OSError: return '0.0.0'
@@ -194,11 +197,31 @@ def device_api(config, method='GET', payload=None):
     with urllib.request.urlopen(request, timeout=10) as response:
         return json.loads(response.read().decode('utf-8'))
 
+def connection_candidate(api_url, device_id, device_key, config):
+    return {**config, 'api_url': api_url.strip().rstrip('/'), 'device_id': device_id.strip(), 'device_key': device_key.strip()}
+
+def validate_connection(api_url, device_id, device_key, config):
+    candidate = connection_candidate(api_url, device_id, device_key, config)
+    if not candidate['api_url'].startswith(('http://', 'https://')):
+        raise ValueError('Platform URL must begin with http:// or https://')
+    if not candidate['device_id'] or not candidate['device_key']:
+        raise ValueError('Device ID and device key are required')
+    try:
+        device_api(candidate)
+    except urllib.error.HTTPError as error:
+        if error.code in (401, 403): raise PermissionError('Invalid device ID or device key') from error
+        raise RuntimeError('Platform returned HTTP ' + str(error.code)) from error
+    return candidate
+
 def tracking_loop():
     gps_enabled_for = None
     while True:
         try:
-            config = load_config(); modem = find_modem(config)
+            config = load_config()
+            if not configured(config):
+                with LOCK: STATUS['last_error'] = 'Not connected to Stream GPS. Complete setup in the local panel.'
+                time.sleep(2); continue
+            modem = find_modem(config)
             if modem is None: raise RuntimeError('No ModemManager modem detected')
             if modem != gps_enabled_for: enable_gps(modem); gps_enabled_for = modem
             with LOCK: STATUS['modem'] = modem
@@ -242,12 +265,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(401); self.send_header('WWW-Authenticate', 'Basic realm="Stream GPS device"'); self.end_headers(); return False
     def respond(self, status, body, content_type='text/html; charset=utf-8'):
         data = body.encode(); self.send_response(status); self.send_header('Content-Type', content_type); self.send_header('Content-Length', str(len(data))); self.send_header('Cache-Control', 'no-store'); self.send_header('X-Content-Type-Options', 'nosniff'); self.end_headers(); self.wfile.write(data)
+    def redirect_home(self):
+        self.send_response(303); self.send_header('Location', '/'); self.send_header('Cache-Control', 'no-store'); self.end_headers()
+    def setup_page(self, message=''):
+        notification = f'<p class="notice">{html.escape(message)}</p>' if message else ''
+        return f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect Stream GPS</title><style>body{{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:760px;margin:30px auto;padding:16px}}section{{background:#121b2b;border:1px solid #28364b;border-radius:12px;padding:20px;margin:16px 0}}input{{width:100%;box-sizing:border-box;padding:10px;margin:5px 0 14px;background:#0f1726;color:white;border:1px solid #44536a;border-radius:7px}}button{{padding:10px 15px;background:#1f6feb;color:white;border:0;border-radius:7px;margin-right:8px;cursor:pointer}}button:disabled{{opacity:.55;cursor:not-allowed}}.secondary{{background:#28364b}}.ok{{color:#35d39a}}.error{{background:#4b2028;border-radius:8px;color:#ffb4ab;padding:10px 12px}}.notice{{background:#17365c;border-radius:8px;color:#cbe3ff;padding:10px 12px}}.key-row{{display:flex;gap:8px}}.key-row input{{margin-bottom:14px}}.key-row button{{height:42px;margin-top:5px;white-space:nowrap}}.hint{{color:#aab9cc;font-size:.9em}}</style></head><body><h1>Connect Stream GPS</h1><section><h2>Finish device setup</h2><p>Enter the credentials from your Stream GPS <b>Devices</b> page. The agent saves them only after the platform accepts them.</p>{notification}<form id="connect-form" method="post" action="/connect"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" placeholder="https://stream-gps.example" inputmode="url" required><label>Device ID</label><input name="device_id" placeholder="BELABOX_7522" required><label>Device key</label><div class="key-row"><input id="device-key" name="device_key" type="password" autocomplete="off" required><button class="secondary" id="toggle-key" type="button">Show</button></div><p id="trim-notice" class="notice" hidden>Leading or trailing spaces were removed before testing.</p><button id="test-button" class="secondary" type="button">Test connection</button><button id="connect-button" type="submit" disabled>Save and connect</button><p id="result" aria-live="polite"></p></form></section><section><h2>What happens next</h2><p>After a successful connection, the agent starts GPS uploads. You can then change the upload interval and modem settings here.</p><p class="hint">The device key remains hidden after saving. To retrieve it later, use <b>Your keys</b> on the device page in Stream GPS.</p></section><script>const form=document.getElementById('connect-form'),key=document.getElementById('device-key'),notice=document.getElementById('trim-notice'),result=document.getElementById('result'),save=document.getElementById('connect-button');function clean(){{let changed=false;for(const input of form.querySelectorAll('input[name="api_url"],input[name="device_id"],input[name="device_key"]')){{const value=input.value.trim();if(value!==input.value){{input.value=value;changed=true}}}}notice.hidden=!changed}}document.getElementById('toggle-key').onclick=()=>{{key.type=key.type==='password'?'text':'password';document.getElementById('toggle-key').textContent=key.type==='password'?'Show':'Hide'}};document.getElementById('test-button').onclick=async()=>{{clean();result.className='notice';result.textContent='Testing connection…';save.disabled=true;try{{const response=await fetch('/test-connection',{{method:'POST',body:new FormData(form)}});const payload=await response.json();result.className=response.ok?'ok':'error';result.textContent=payload.message;save.disabled=!response.ok}}catch(error){{result.className='error';result.textContent='Unable to test the connection.'}}}};form.addEventListener('submit',clean);</script></body></html>'''
     def do_GET(self):
         if not self.require_auth(): return
         if self.path == '/api/status':
             with LOCK: payload = dict(STATUS)
             self.respond(200, json.dumps(payload), 'application/json'); return
-        config = load_config(); status = dict(STATUS); update = status.get('update_check'); installed = current_version()
+        config = load_config()
+        if not configured(config): self.respond(200, self.setup_page()); return
+        status = dict(STATUS); update = status.get('update_check'); installed = current_version()
         try:
             sharing = device_api(config).get('sharing') or {}; sharing_error = None
         except Exception as error:
@@ -263,17 +293,31 @@ class Handler(BaseHTTPRequestHandler):
         from urllib.parse import parse_qs
         length = min(int(self.headers.get('Content-Length', '0')), 20000); form = parse_qs(self.rfile.read(length).decode())
         if form.get('csrf', [''])[0] != self.csrf: self.respond(403, 'Invalid form token'); return
+        if self.path == '/test-connection':
+            try:
+                config = load_config(); validate_connection(form.get('api_url', [''])[0], form.get('device_id', [''])[0], form.get('device_key', [''])[0], config)
+                self.respond(200, json.dumps({'message': 'Connected to Stream GPS. You can now save this configuration.'}), 'application/json')
+            except PermissionError as error: self.respond(401, json.dumps({'message': str(error)}), 'application/json')
+            except Exception as error: self.respond(502, json.dumps({'message': 'Connection failed: ' + str(error)}), 'application/json')
+            return
+        if self.path == '/connect':
+            try:
+                config = load_config(); candidate = validate_connection(form.get('api_url', [''])[0], form.get('device_id', [''])[0], form.get('device_key', [''])[0], config)
+                config.update(candidate); save_config(config); self.redirect_home()
+            except Exception as error:
+                self.respond(400, self.setup_page('Connection was not saved: ' + str(error)))
+            return
         if self.path == '/toggle-public-sharing':
             try:
                 enabled = form.get('enabled', ['false'])[0] == 'true'
                 device_api(load_config(), 'PATCH', {'enabled': enabled})
-                self.send_response(303); self.send_header('Location', '/'); self.end_headers()
+                self.redirect_home()
             except Exception as error: self.respond(502, 'Unable to update public sharing: ' + html.escape(str(error)))
             return
         if self.path == '/check-update':
             try:
                 with LOCK: STATUS['update_check'] = check_update()
-                self.send_response(303); self.send_header('Location', '/'); self.end_headers()
+                self.redirect_home()
             except Exception as error: self.respond(502, 'Update check failed: ' + html.escape(str(error)))
             return
         if self.path == '/install-update':
@@ -287,17 +331,17 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as error: self.respond(500, 'Unable to start update: ' + html.escape(str(error)))
             return
         if self.path != '/save': self.respond(404, 'Not found'); return
-        config = load_config(); interval = float(form.get('interval_seconds', ['2'])[0]); api_url = form.get('api_url', [''])[0].rstrip('/')
+        config = load_config(); interval = float(form.get('interval_seconds', ['2'])[0]); api_url = form.get('api_url', [''])[0].strip().rstrip('/')
         if not 0.5 <= interval <= 10: self.respond(400, 'Interval must be between 0.5 and 10 seconds'); return
         if not api_url.startswith(('http://', 'https://')): self.respond(400, 'Platform URL must begin with http:// or https://'); return
-        config.update(api_url=api_url, device_id=form.get('device_id', [''])[0], interval_seconds=interval, modem_id=form.get('modem_id', ['auto'])[0])
-        if form.get('device_key', [''])[0]: config['device_key'] = form['device_key'][0]
-        save_config(config); self.send_response(303); self.send_header('Location', '/'); self.end_headers()
+        config.update(api_url=api_url, device_id=form.get('device_id', [''])[0].strip(), interval_seconds=interval, modem_id=form.get('modem_id', ['auto'])[0].strip() or 'auto')
+        if form.get('device_key', [''])[0].strip(): config['device_key'] = form['device_key'][0].strip()
+        save_config(config); self.redirect_home()
     def log_message(self, fmt, *args): print('web:', fmt % args)
 
 def diagnostic():
     config = load_config(); modem = find_modem(config)
-    checks = [('Configuration', bool(config.get('api_url') and config.get('device_id') and config.get('device_key'))), ('ModemManager', run('mmcli', '-L').returncode == 0), ('Modem detected', modem is not None)]
+    checks = [('Configuration', configured(config)), ('ModemManager', run('mmcli', '-L').returncode == 0), ('Modem detected', modem is not None)]
     position = None
     if modem is not None:
         enable_gps(modem)
@@ -305,7 +349,7 @@ def diagnostic():
         except Exception: pass
     checks.append(('GPS fix', position is not None))
     api_ok = False
-    if position:
+    if position and configured(config):
         try: upload(config, position); api_ok = True
         except Exception as error: print('[FAIL] API upload:', error)
     checks.append(('Authenticated API upload', api_ok))

@@ -8,7 +8,7 @@ Ten klient działa jako osobna usługa systemowa. **Nie modyfikuje BelaUI, nie p
 - Modem 4G/5G z obsługą GNSS, widoczny w ModemManagerze.
 - Antena podłączona do portu GNSS modemu. Port antenowy sieci komórkowej nie zawsze obsługuje GNSS.
 - Działający serwer Stream GPS dostępny z Belaboxa przez HTTPS.
-- `DEVICE_ID` i jednorazowy `DEVICE_KEY` utworzone na stronie **Devices**.
+- `DEVICE_ID` i `DEVICE_KEY` utworzone na stronie **Devices**.
 - Komputer w tej samej zaufanej sieci co Belabox, jeżeli panel `:26666` ma być otwierany bez tunelu SSH.
 
 GPS może uzyskać pozycję bez karty SIM, ale pierwszy fix po zimnym starcie może potrwać kilka lub kilkanaście minut. Najlepiej przeprowadzić test przy oknie lub na zewnątrz.
@@ -19,7 +19,7 @@ GPS może uzyskać pozycję bez karty SIM, ale pierwszy fix po zimnym starcie mo
 2. Otwórz **Devices**.
 3. Wpisz nazwę urządzenia i opcjonalny czytelny identyfikator.
 4. Kliknij **Create device**.
-5. Zapisz `DEVICE_ID` oraz `DEVICE_KEY`. Klucz jest wyświetlany tylko raz.
+5. Skopiuj `DEVICE_ID` oraz `DEVICE_KEY`. Klucz można później ponownie wyświetlić wyłącznie po zalogowaniu na konto właściciela, w sekcji **Your keys** na stronie urządzenia.
 
 Nie zapisuj klucza w GitHubie, wiadomości publicznej ani zrzucie ekranu.
 
@@ -69,12 +69,7 @@ Opcjonalnie najpierw wykonaj kontrolę bez wprowadzania zmian:
 sh /tmp/install-stream-gps-device.sh --dry-run
 ```
 
-Instalator zapyta o:
-
-- bazowy adres platformy, np. `https://gps.example.com` — bez `/api/v1/gps/update`;
-- `DEVICE_ID`;
-- `DEVICE_KEY` (znaki nie będą wyświetlane);
-- osobne hasło do lokalnego panelu na porcie `26666`, minimum 12 znaków.
+Instalator pyta wyłącznie o osobne hasło do lokalnego panelu na porcie `26666` (minimum 12 znaków). Adres platformy, `DEVICE_ID` i `DEVICE_KEY` wpiszesz później w panelu przeglądarkowym — dzięki temu zobaczysz wynik testu połączenia przed zapisem.
 
 Instalator:
 
@@ -106,6 +101,14 @@ Przeglądarka poprosi o dane Basic Auth:
 
 - użytkownik: `admin`;
 - hasło: hasło panelu podane podczas instalacji.
+
+Przy pierwszym otwarciu wyświetli się ekran **Connect Stream GPS**. Wklej tam:
+
+- bazowy adres platformy, np. `https://gps.example.com` — bez `/api/v1/gps/update`;
+- `DEVICE_ID`;
+- `DEVICE_KEY`.
+
+Pole klucza jest domyślnie ukryte i ma przycisk **Show**. Panel usuwa spacje z początku i końca pól oraz wyraźnie o tym informuje. Wybierz **Test connection**: konfiguracja może zostać zapisana przyciskiem **Save and connect** dopiero, gdy platforma potwierdzi poprawne ID i klucz. Błędne dane nie są zapisywane.
 
 Panel pokazuje modem, stan fixa GPS, rozmiar kolejki i ostatni błąd. Pozwala zmienić adres serwera, `DEVICE_ID`, klucz, numer modemu oraz interwał 0,5–10 sekund. Domyślnie używane są 2 sekundy. Ustawienie 0,5 sekundy nie zagwarantuje nowej pozycji dwa razy na sekundę — rzeczywista częstotliwość zależy od modemu, fixa GNSS i czasu odpowiedzi `mmcli`. Istniejący klucz nigdy nie jest wyświetlany.
 

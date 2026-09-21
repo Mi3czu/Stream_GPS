@@ -51,7 +51,7 @@ const InstallAgent = () => {
 
         <article className="panel install-step">
           <span className="install-step__number">4</span>
-          <div><h2>Enter the platform and device credentials</h2><p>When prompted, use this platform address, followed by the device credentials from step 1 and a separate local-panel password of at least 12 characters.</p><CopyCommand label="Copy platform address">{platformUrl}</CopyCommand><p className="panel__hint">Enter only the base address — do not add an API path. The device key is hidden while typing and is never displayed in the agent panel.</p></div>
+          <div><h2>Connect the platform in the local panel</h2><p>The installer asks only for a local-panel password. Open the panel in step 5, then enter this platform address and the device credentials from step 1. Use <strong>Test connection</strong> before saving.</p><CopyCommand label="Copy platform address">{platformUrl}</CopyCommand><p className="panel__hint">Enter only the base address — do not add an API path. Leading and trailing spaces are removed with a visible notice, and credentials are saved only after the test succeeds.</p></div>
         </article>
 
         <article className="panel install-step">

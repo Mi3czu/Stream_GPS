@@ -68,13 +68,8 @@ fi
 
 echo "This standalone agent does not modify BelaUI."
 if [ "$MODE" = install ]; then
-  printf "Platform base URL (example https://gps.example.com): "; read -r API_URL
-  printf "DEVICE_ID from the Stream GPS Devices page: "; read -r DEVICE_ID
-  printf "DEVICE_KEY (input hidden): "; stty -echo; read -r DEVICE_KEY; stty echo; printf '\n'
   printf "Password for local configuration panel (minimum 12 characters, input hidden): "; stty -echo; read -r UI_PASSWORD; stty echo; printf '\n'
   [ "${#UI_PASSWORD}" -ge 12 ] || { echo "Panel password must contain at least 12 characters"; exit 1; }
-  [ -n "$API_URL" ] && [ -n "$DEVICE_ID" ] && [ -n "$DEVICE_KEY" ] || { echo "URL, device ID and key are required"; exit 1; }
-  case "$API_URL" in http://*|https://*) ;; *) echo "Platform URL must begin with http:// or https://"; exit 1 ;; esac
 else
   echo "Upgrade mode: preserving the existing configuration and queued GPS data."
 fi
@@ -93,11 +88,11 @@ install -m 755 "$INSTALL_DIR/stream_gps_agent.py" /usr/local/bin/stream-gps-agen
 install -m 755 "$INSTALL_DIR/stream-gps-device" /usr/local/bin/stream-gps-device
 
 if [ "$MODE" = install ]; then
-python3 - "$CONFIG_DIR/config.json" "$API_URL" "$DEVICE_ID" "$DEVICE_KEY" "$UI_PASSWORD" <<'PY'
+python3 - "$CONFIG_DIR/config.json" "$UI_PASSWORD" <<'PY'
 import base64, hashlib, json, os, sys
-path, url, device_id, device_key, password = sys.argv[1:]
+path, password = sys.argv[1:]
 salt = os.urandom(16)
-config = {'api_url': url.rstrip('/'), 'device_id': device_id, 'device_key': device_key, 'interval_seconds': 2,
+config = {'api_url': '', 'device_id': '', 'device_key': '', 'interval_seconds': 2,
           'modem_id': 'auto', 'ui_bind': '0.0.0.0', 'ui_port': 26666,
           'ui_password_salt': base64.b64encode(salt).decode(),
           'ui_password_hash': base64.b64encode(hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 200000)).decode()}
@@ -116,5 +111,5 @@ echo "Installation complete."
 echo "Agent version: $(cat "$INSTALL_DIR/VERSION")"
 echo "Configuration panel: http://${IP:-BELABOX-IP}:26666"
 echo "Login name: admin"
-[ "$MODE" != install ] || echo "Use the panel password entered during installation."
+[ "$MODE" != install ] || echo "Use the panel password entered during installation, then connect Stream GPS in the local panel."
 echo "Run diagnostics: sudo stream-gps-device test"
