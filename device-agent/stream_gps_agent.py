@@ -8,6 +8,7 @@ from pathlib import Path
 CONFIG_PATH = Path('/etc/stream-gps-device/config.json')
 QUEUE_PATH = Path('/var/lib/stream-gps-device/queue.jsonl')
 STATE_DIR = QUEUE_PATH.parent
+UPDATE_STATUS_PATH = STATE_DIR / 'update-status.json'
 STATUS = {'started_at': time.time(), 'modem': None, 'modem_info': {}, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0}
 LOCK = threading.Lock()
 DEFAULT_UPDATE_BASE = 'https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/device-agent'
@@ -21,6 +22,23 @@ def save_config(config):
     temporary = CONFIG_PATH.with_suffix('.tmp')
     temporary.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
     os.chmod(temporary, 0o600); temporary.replace(CONFIG_PATH)
+
+def save_update_status(state, **details):
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        temporary = UPDATE_STATUS_PATH.with_suffix('.tmp')
+        temporary.write_text(json.dumps({'state': state, 'updated_at': time.time(), **details}), encoding='utf-8')
+        os.chmod(temporary, 0o600); temporary.replace(UPDATE_STATUS_PATH)
+    except OSError:
+        pass
+
+def load_update_status():
+    try:
+        with UPDATE_STATUS_PATH.open(encoding='utf-8') as handle:
+            status = json.load(handle)
+        return status if isinstance(status, dict) else {}
+    except (OSError, ValueError):
+        return {}
 
 def configured(config):
     return bool(str(config.get('api_url', '')).strip() and str(config.get('device_id', '')).strip() and str(config.get('device_key', '')).strip())
@@ -70,6 +88,15 @@ def check_update(config=None):
             'download_bytes': update_download_size(base) if update_available else None}
 
 def apply_update():
+    save_update_status('downloading')
+    try:
+        version = _apply_update()
+    except Exception as error:
+        save_update_status('failed', error=str(error))
+        raise
+    save_update_status('succeeded', version=version or current_version())
+
+def _apply_update():
     config = load_config(); base = update_base(config); release = check_update(config)
     if not release['update_available']:
         print('No update available'); return
@@ -110,6 +137,7 @@ def apply_update():
             time.sleep(3)
             if subprocess.run(['systemctl', 'is-active', '--quiet', 'stream-gps-device']).returncode != 0: raise RuntimeError('Updated service did not become active')
             print('Updated Stream GPS Device to ' + release['available'])
+            return release['available']
         except Exception:
             for name in ('stream_gps_agent.py', 'stream-gps-device', 'VERSION'):
                 if (backup / name).exists(): shutil.copy2(backup / name, install_dir / name)
@@ -419,6 +447,14 @@ class Handler(BaseHTTPRequestHandler):
                            f'<form method="post" action="/install-update"><input type="hidden" name="csrf" value="{self.csrf}"><button>Install update</button></form>')
         else:
             update_text = '<p class="good">You are up to date.</p>'
+        update_status = load_update_status()
+        if update_status.get('state') in ('scheduled', 'downloading'):
+            update_text += '<p class="warn"><b>Update in progress.</b> The page will show the final result after the agent restarts.</p>'
+        elif update_status.get('state') == 'succeeded':
+            version = html.escape(str(update_status.get('version') or ''))
+            update_text += f'<p class="good"><b>Last update completed successfully.</b>{" Installed version: " + version + "." if version else ""}</p>'
+        elif update_status.get('state') == 'failed':
+            update_text += '<p class="status-error"><b>Last update failed:</b> ' + html.escape(str(update_status.get('error') or 'Unknown error')) + '</p>'
         def metric(label, value, hint): return f'<div class="metric"><span>{html.escape(label)}</span><b>{html.escape(value)}</b><small>{html.escape(hint)}</small></div>'
         system_cards = ''.join((
             metric('CPU', f'{metrics["cpu"]}%' if metrics['cpu'] is not None else 'Measuring…', 'current usage'),
@@ -484,11 +520,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 release = check_update()
                 if not release['update_available']: self.respond_error(409, 'No update is available.'); return
+                save_update_status('scheduled', version=release['available'])
                 unit = 'stream-gps-device-update-' + str(int(time.time()))
                 result = run('systemd-run', '--unit=' + unit, '--collect', '/usr/bin/python3', str(Path(__file__).resolve()), 'apply-update')
                 if result.returncode: raise RuntimeError(result.stderr.strip() or 'Unable to schedule updater')
-                self.respond(202, '''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="refresh" content="20;url=/"><title>Updating Stream GPS Device</title><style>body{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:680px;margin:60px auto;padding:20px}a{color:#79b8ff}</style></head><body><h1>Update started</h1><p>The agent is restarting. Returning to the main page in <b id="countdown">20</b> seconds.</p><p><a href="/">Return now</a></p><script>let remaining=20;const timer=setInterval(()=>{remaining-=1;document.getElementById('countdown').textContent=remaining;if(remaining<=0){clearInterval(timer);location.replace('/')}},1000)</script></body></html>''')
-            except Exception as error: self.respond_error(500, 'Unable to start update: ' + str(error))
+                self.respond(202, '''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="refresh" content="20;url=/"><title>Updating Stream GPS Device</title><style>body{font:16px system-ui;background:#0b1120;color:#e5edf7;max-width:680px;margin:60px auto;padding:20px}a{color:#79b8ff}</style></head><body><h1>Update in progress</h1><p>The update is downloading and the agent will restart. The dashboard will show whether it completed successfully or failed.</p><p>Returning to the dashboard in <b id="countdown">20</b> seconds.</p><p><a href="/">Return now</a></p><script>let remaining=20;const timer=setInterval(()=>{remaining-=1;document.getElementById('countdown').textContent=remaining;if(remaining<=0){clearInterval(timer);location.replace('/')}},1000)</script></body></html>''')
+            except Exception as error:
+                save_update_status('failed', error=str(error))
+                self.respond_error(500, 'Unable to start update: ' + str(error))
             return
         if self.path != '/save': self.respond_error(404, 'This action is not available.'); return
         try: interval = float(form.get('interval_seconds', ['2'])[0])
