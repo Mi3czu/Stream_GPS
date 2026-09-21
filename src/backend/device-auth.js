@@ -1,10 +1,13 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { pool } = require('./database/postgres');
 
 const REQUEST_WINDOW_SECONDS = 300;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 180;
+const AUTH_CACHE_TTL_MS = 15_000;
 const requestCounters = new Map();
+const authenticatedDevices = new Map();
 
 function sendError(res, status, error, message) {
   return res.status(status).json({ error, message });
@@ -21,6 +24,17 @@ function isRateLimited(deviceId) {
 
   current.count += 1;
   return current.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
+function authCacheKey(deviceId, key) {
+  return `${deviceId}:${crypto.createHash('sha256').update(key).digest('base64url')}`;
+}
+
+function invalidateDeviceAuth(deviceId) {
+  const prefix = `${deviceId}:`;
+  for (const cacheKey of authenticatedDevices.keys()) {
+    if (cacheKey.startsWith(prefix)) authenticatedDevices.delete(cacheKey);
+  }
 }
 
 async function authenticateDevice(req, res, next) {
@@ -46,6 +60,17 @@ async function authenticateDevice(req, res, next) {
     return sendError(res, 429, 'RATE_LIMITED', 'Too many GPS updates; retry later');
   }
 
+  const key = authorization.slice('Bearer '.length);
+  const cacheKey = authCacheKey(deviceId, key);
+  const cached = authenticatedDevices.get(cacheKey);
+  if (cached?.expiresAt > Date.now()) {
+    req.device = cached.device;
+    req.deviceKey = key;
+    req.requestNonce = nonce;
+    return next();
+  }
+  if (cached) authenticatedDevices.delete(cacheKey);
+
   try {
     const result = await pool.query(
       `SELECT id, device_id, name, status, device_key_hash, owner_id, public_share_id, public_share_enabled, last_recorded_at
@@ -59,11 +84,11 @@ async function authenticateDevice(req, res, next) {
       return sendError(res, 401, 'DEVICE_NOT_AUTHORIZED', 'Unknown or inactive device');
     }
 
-    const key = authorization.slice('Bearer '.length);
     if (!(await bcrypt.compare(key, device.device_key_hash))) {
       return sendError(res, 401, 'DEVICE_NOT_AUTHORIZED', 'Unknown or inactive device');
     }
 
+    authenticatedDevices.set(cacheKey, { device, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
     req.device = device;
     req.deviceKey = key;
     req.requestNonce = nonce;
@@ -74,4 +99,4 @@ async function authenticateDevice(req, res, next) {
   }
 }
 
-module.exports = { authenticateDevice, sendError };
+module.exports = { authenticateDevice, invalidateDeviceAuth, sendError };

@@ -7,10 +7,12 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const { pool } = require('./database/postgres');
 const { authenticate } = require('./auth');
-const { authenticateDevice, sendError } = require('./device-auth');
+const { authenticateDevice, invalidateDeviceAuth, sendError } = require('./device-auth');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+const RETENTION_CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
+const retentionCleanupAttempts = new Map();
 const overlayStreams = new Map();
 const deviceStreams = new Map();
 const publicMapStreams = new Map();
@@ -415,7 +417,6 @@ function haversineMeters(latitudeA, longitudeA, latitudeB, longitudeB) {
 }
 
 async function updateTelemetrySession(client, device, position) {
-  await client.query('SELECT id FROM devices WHERE id = $1 FOR UPDATE', [device.id]);
   const result = await client.query(
     `SELECT * FROM telemetry_sessions
      WHERE device_id = $1 AND ended_at IS NULL
@@ -488,6 +489,9 @@ async function publishDevicePosition(device, position, sessionMetrics) {
 }
 
 async function runRetentionCleanup(ownerId) {
+  const now = Date.now();
+  if ((retentionCleanupAttempts.get(ownerId) || 0) + RETENTION_CLEANUP_INTERVAL_MS > now) return;
+  retentionCleanupAttempts.set(ownerId, now);
   const claim = await pool.query(
     `UPDATE admins SET retention_last_run_at = NOW()
      WHERE id = $1 AND retention_days IS NOT NULL
@@ -503,6 +507,14 @@ async function runRetentionCleanup(ownerId) {
     [ownerId, claim.rows[0].retention_days]
   );
 }
+
+function cleanupExpiredRequestNonces() {
+  pool.query('DELETE FROM request_nonces WHERE expires_at <= NOW()')
+    .catch((error) => console.error('Expired nonce cleanup error:', error.message));
+}
+
+const nonceCleanupTimer = setInterval(cleanupExpiredRequestNonces, 60_000);
+nonceCleanupTimer.unref();
 
 function validateGpsPosition(body) {
   const latitude = Number(body.latitude);
@@ -1497,6 +1509,7 @@ app.post('/api/v1/devices/:deviceId/rotate-key', authenticate, async (req, res) 
       [await bcrypt.hash(deviceKey, 12), encryptSecret(deviceKey), req.params.deviceId, req.user.sub]
     );
     if (!result.rows[0]) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Active device not found');
+    invalidateDeviceAuth(result.rows[0].device_id);
     await recordAudit(req, 'device.key_replaced', 'device', req.params.deviceId);
     res.json({ device: result.rows[0], device_key: deviceKey, warning: 'Treat device_key as a password. The device owner can reveal it later in the dashboard credentials section.' });
   } catch (error) {
@@ -1514,6 +1527,7 @@ app.post('/api/v1/devices/:deviceId/revoke', authenticate, async (req, res) => {
       [req.params.deviceId, req.user.sub]
     );
     if (!result.rows[0]) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Unknown device');
+    invalidateDeviceAuth(result.rows[0].device_id);
     await recordAudit(req, 'device.revoked', 'device', req.params.deviceId);
     res.json({ device: result.rows[0] });
   } catch (error) {
@@ -1563,7 +1577,6 @@ app.patch('/api/v1/device/public-sharing', authenticateDevice, async (req, res) 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('DELETE FROM request_nonces WHERE expires_at <= NOW()');
     await client.query(
       `INSERT INTO request_nonces (nonce, device_id, expires_at)
        VALUES ($1, $2, NOW() + INTERVAL '5 minutes')`,
@@ -1582,6 +1595,7 @@ app.patch('/api/v1/device/public-sharing', authenticateDevice, async (req, res) 
     const sharing = result.rows[0];
     if (sharing.public_share_enabled) publicMapCache.delete(String(sharing.public_share_id));
     else disablePublicMapShare(sharing.public_share_id);
+    invalidateDeviceAuth(sharing.device_id);
     await recordAudit(req, req.body.enabled ? 'public_sharing.device_enabled' : 'public_sharing.device_disabled', 'device', req.device.device_id);
     res.json({ sharing, public_map_path: sharing.public_share_id ? `/map/${sharing.public_share_id}` : null });
   } catch (error) {
@@ -1610,7 +1624,6 @@ app.post('/api/v1/gps/update', authenticateDevice, async (req, res) => {
       await client.query('ROLLBACK');
       return sendError(res, 409, 'GPS_POSITION_OUT_OF_ORDER', 'recorded_at must be newer than the last accepted position');
     }
-    await client.query('DELETE FROM request_nonces WHERE expires_at <= NOW()');
     await client.query(
       `INSERT INTO request_nonces (nonce, device_id, expires_at)
        VALUES ($1, $2, NOW() + INTERVAL '5 minutes')`,

@@ -9,6 +9,7 @@ CONFIG_PATH = Path('/etc/stream-gps-device/config.json')
 QUEUE_PATH = Path('/var/lib/stream-gps-device/queue.jsonl')
 STATE_DIR = QUEUE_PATH.parent
 UPDATE_STATUS_PATH = STATE_DIR / 'update-status.json'
+UPDATE_SUCCESS_NOTICE_SECONDS = 10 * 60
 STATUS = {'started_at': time.time(), 'modem': None, 'modem_info': {}, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0}
 LOCK = threading.Lock()
 DEFAULT_UPDATE_BASE = 'https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/device-agent'
@@ -37,7 +38,11 @@ def load_update_status():
     try:
         with UPDATE_STATUS_PATH.open(encoding='utf-8') as handle:
             status = json.load(handle)
-        return status if isinstance(status, dict) else {}
+        if not isinstance(status, dict): return {}
+        if status.get('state') == 'succeeded' and time.time() - float(status.get('updated_at', 0)) > UPDATE_SUCCESS_NOTICE_SECONDS:
+            UPDATE_STATUS_PATH.unlink(missing_ok=True)
+            return {}
+        return status
     except (OSError, ValueError):
         return {}
 
