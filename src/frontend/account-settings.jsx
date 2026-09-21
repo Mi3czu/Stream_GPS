@@ -12,6 +12,7 @@ const AccountSettings = () => {
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [retentionDays, setRetentionDays] = useState('forever');
+  const [chatIntegrations, setChatIntegrations] = useState([]);
 
   const token = sessionStorage.getItem('accessToken');
   const headers = { Authorization: `Bearer ${token}` };
@@ -29,13 +30,15 @@ const AccountSettings = () => {
       return;
     }
     try {
-      const [accountResponse, sessionsResponse] = await Promise.all([
+      const [accountResponse, sessionsResponse, chatResponse] = await Promise.all([
         axios.get('/api/me', { headers }),
-        axios.get('/api/v1/account/sessions', { headers })
+        axios.get('/api/v1/account/sessions', { headers }),
+        axios.get('/api/v1/chat/integrations', { headers })
       ]);
       setAccount(accountResponse.data.user);
       setRetentionDays(accountResponse.data.user.retention_days ?? 'forever');
       setSessions(sessionsResponse.data.sessions);
+      setChatIntegrations(chatResponse.data.integrations || []);
     } catch (requestError) {
       if (!handleUnauthorized(requestError)) {
         setError(requestError.response?.data?.message || requestError.message);
@@ -69,6 +72,17 @@ const AccountSettings = () => {
       if (!handleUnauthorized(requestError)) {
         setError(requestError.response?.data?.message || requestError.message);
       }
+    }
+  };
+
+  const disconnectChat = async (platform) => {
+    if (!window.confirm(`Disconnect ${platform}? Stored chat credentials and command permissions will be removed. GPS devices and overlays are not affected.`)) return;
+    try {
+      await axios.delete(`/api/v1/chat/integrations/${platform}`, { headers });
+      setMessage(`${platform} chat integration disconnected.`);
+      await loadAccount();
+    } catch (requestError) {
+      if (!handleUnauthorized(requestError)) setError(requestError.response?.data?.message || requestError.message);
     }
   };
 
@@ -132,6 +146,20 @@ const AccountSettings = () => {
           </select>
           <button type="submit">Save retention</button>
         </form>
+      </section>
+
+      <section className="panel">
+        <h2>Chat integrations</h2>
+        <p className="panel__hint">Optional controls for location sharing and OBS overlay visibility. Nothing is connected or enabled by default.</p>
+        <div className="device-list">
+          {chatIntegrations.map(({ platform, configured, callback_path: callbackPath, integration }) => (
+            <article className="device-card" key={platform}>
+              <div className="device-card__top"><strong>{platform === 'kick' ? 'Kick' : 'Twitch'}</strong><span className={`status-pill ${integration?.enabled ? 'status-pill--online' : 'status-pill--offline'}`}>{integration?.enabled ? 'enabled' : 'not connected'}</span></div>
+              {integration ? <><p className="panel__hint">Channel: {integration.channel_name || integration.channel_id || 'not available'}. Disconnecting permanently removes this platform connection and its chat permission list.</p><button className="button--danger" type="button" onClick={() => disconnectChat(platform)}>Disconnect and remove</button></> : configured ? <p className="panel__hint">Server credentials are present. OAuth connection UI will be enabled after the external app callback is configured.</p> : <p className="panel__hint">Not configured on this server yet. Add the OAuth client ID, client secret and public HTTPS address before connecting.</p>}
+              <small>Callback path: <code>{callbackPath}</code></small>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section>

@@ -44,6 +44,45 @@ function decryptSecret(value) {
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 
+function chatConfiguration(platform) {
+  const upper = platform.toUpperCase();
+  return {
+    configured: Boolean(process.env[`${upper}_CLIENT_ID`] && process.env[`${upper}_CLIENT_SECRET`] && process.env.PUBLIC_BASE_URL),
+    callback_path: `/api/v1/chat/${platform}/callback`
+  };
+}
+
+// These endpoints deliberately only expose connection state. OAuth credentials
+// remain server-side and integrations are inert until explicitly connected.
+app.get('/api/v1/chat/integrations', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, platform, enabled, channel_id, channel_name, settings, created_at, updated_at
+       FROM chat_integrations WHERE owner_id = $1 ORDER BY platform`, [req.user.sub]
+    );
+    const integrations = ['kick', 'twitch'].map((platform) => ({
+      platform, ...chatConfiguration(platform), integration: result.rows.find((row) => row.platform === platform) || null
+    }));
+    res.json({ integrations });
+  } catch (error) {
+    console.error('Chat integrations read error:', error.message);
+    sendError(res, 500, 'CHAT_INTEGRATIONS_READ_FAILED', 'Unable to load chat integrations');
+  }
+});
+
+app.delete('/api/v1/chat/integrations/:platform', authenticate, async (req, res) => {
+  const platform = String(req.params.platform || '').toLowerCase();
+  if (!['kick', 'twitch'].includes(platform)) return sendError(res, 404, 'CHAT_PLATFORM_UNKNOWN', 'Unknown chat platform');
+  try {
+    await pool.query('DELETE FROM chat_integrations WHERE owner_id = $1 AND platform = $2', [req.user.sub, platform]);
+    await recordAudit(req, 'chat.integration.disconnected', 'chat_integration', platform);
+    res.json({ message: `${platform} integration disconnected` });
+  } catch (error) {
+    console.error('Chat integration disconnect error:', error.message);
+    sendError(res, 500, 'CHAT_INTEGRATION_DISCONNECT_FAILED', 'Unable to disconnect chat integration');
+  }
+});
+
 app.get('/api/openapi.yaml', (req, res) => {
   res.type('text/yaml').send(fs.readFileSync(path.join(__dirname, 'openapi.yaml'), 'utf8'));
 });
@@ -160,7 +199,7 @@ function escapeXml(value) {
 
 async function getOverlayForPublicAccess(overlayId, accessKey) {
   const result = await pool.query(
-    `SELECT o.id, o.access_key_hash, o.access_key_encrypted, o.config, d.name, d.device_id, d.status, d.last_seen_at,
+    `SELECT o.id, o.access_key_hash, o.access_key_encrypted, o.config, o.visible, d.name, d.device_id, d.status, d.last_seen_at,
             d.last_latitude, d.last_longitude, d.last_speed, d.last_heading, d.last_altitude,
             d.last_accuracy, d.last_satellites, d.last_recorded_at,
             session.distance_m AS trip_distance_m, session.max_speed AS max_session_speed,
@@ -957,7 +996,7 @@ app.post('/api/v1/devices/:deviceId/overlays', authenticate, async (req, res) =>
 app.get('/api/v1/devices/:deviceId/overlays', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT o.id, o.name, o.status, o.created_at
+      `SELECT o.id, o.name, o.status, o.visible, o.created_at
        FROM overlays o JOIN devices d ON d.id = o.device_id
        WHERE d.device_id = $1 AND d.owner_id = $2 ORDER BY o.created_at DESC`,
       [req.params.deviceId, req.user.sub]
@@ -972,7 +1011,7 @@ app.get('/api/v1/devices/:deviceId/overlays', authenticate, async (req, res) => 
 app.get('/api/v1/overlays/:overlayId', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT o.id, o.name, o.status, o.created_at, o.config, d.device_id
+      `SELECT o.id, o.name, o.status, o.visible, o.created_at, o.config, d.device_id
        FROM overlays o JOIN devices d ON d.id = o.device_id
        WHERE o.id = $1 AND d.owner_id = $2`,
       [req.params.overlayId, req.user.sub]
@@ -1003,6 +1042,25 @@ app.patch('/api/v1/overlays/:overlayId', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Update overlay error:', error.message);
     sendError(res, 500, 'OVERLAY_UPDATE_FAILED', 'Unable to update overlay');
+  }
+});
+
+app.patch('/api/v1/overlays/:overlayId/visibility', authenticate, async (req, res) => {
+  if (typeof req.body.visible !== 'boolean') return sendError(res, 400, 'OVERLAY_VISIBILITY_INVALID', 'Visible must be true or false');
+  try {
+    const result = await pool.query(
+      `UPDATE overlays o SET visible = $2, updated_at = NOW()
+       FROM devices d WHERE o.id = $1 AND o.status = 'active' AND d.id = o.device_id AND d.owner_id = $3
+       RETURNING o.id, o.name, o.status, o.visible`,
+      [req.params.overlayId, req.body.visible, req.user.sub]
+    );
+    if (!result.rows[0]) return sendError(res, 404, 'OVERLAY_NOT_FOUND', 'Active overlay not found');
+    publishOverlayEvent(req.params.overlayId, 'visibility', { visible: result.rows[0].visible });
+    await recordAudit(req, req.body.visible ? 'overlay.shown' : 'overlay.hidden', 'overlay', req.params.overlayId);
+    res.json({ overlay: result.rows[0] });
+  } catch (error) {
+    console.error('Overlay visibility error:', error.message);
+    sendError(res, 500, 'OVERLAY_VISIBILITY_FAILED', 'Unable to change overlay visibility');
   }
 });
 
@@ -1074,7 +1132,7 @@ app.get('/api/v1/overlays/:overlayId/data', async (req, res) => {
       return sendError(res, 404, 'OVERLAY_NOT_FOUND', 'Overlay not found');
     }
     res.set('Cache-Control', 'no-store');
-    res.json({ config: normalizeOverlayConfig(overlay.config), device: overlayDeviceData(overlay) });
+    res.json({ config: normalizeOverlayConfig(overlay.config), visible: overlay.visible, device: overlayDeviceData(overlay) });
   } catch (error) {
     console.error('Overlay data error:', error.message);
     sendError(res, 500, 'OVERLAY_DATA_FAILED', 'Unable to load overlay data');
@@ -1097,7 +1155,7 @@ app.get('/api/v1/overlays/:overlayId/stream', async (req, res) => {
     res.flushHeaders();
     if (!overlayStreams.has(overlay.id)) overlayStreams.set(overlay.id, new Set());
     overlayStreams.get(overlay.id).add(res);
-    writeSse(res, 'ready', { device: overlayDeviceData(overlay), config: normalizeOverlayConfig(overlay.config) });
+    writeSse(res, 'ready', { device: overlayDeviceData(overlay), config: normalizeOverlayConfig(overlay.config), visible: overlay.visible });
     const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 25_000);
     req.on('close', () => {
       clearInterval(heartbeat);

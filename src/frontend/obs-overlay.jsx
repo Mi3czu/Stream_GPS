@@ -16,6 +16,7 @@ const ObsOverlay = () => {
   const [searchParams] = useSearchParams();
   const [device, setDevice] = useState(null);
   const [config, setConfig] = useState(null);
+  const [visible, setVisible] = useState(true);
   const [error, setError] = useState(null);
   const [, setClockTick] = useState(0);
 
@@ -40,18 +41,23 @@ const ObsOverlay = () => {
         const response = await axios.get(`/api/v1/overlays/${encodeURIComponent(overlayId)}/data`, { params: { key } });
         setDevice(response.data.device);
         setConfig(response.data.config);
+        setVisible(response.data.visible !== false);
         setError(null);
         stream = new EventSource(`/api/v1/overlays/${encodeURIComponent(overlayId)}/stream?key=${encodeURIComponent(key)}`);
         stream.addEventListener('ready', (event) => {
           const payload = JSON.parse(event.data);
           setDevice(payload.device);
           setConfig(payload.config);
+          setVisible(payload.visible !== false);
         });
         stream.addEventListener('position', (event) => {
           setDevice(JSON.parse(event.data).device);
         });
         stream.addEventListener('config', (event) => {
           setConfig(JSON.parse(event.data).config);
+        });
+        stream.addEventListener('visibility', (event) => {
+          setVisible(JSON.parse(event.data).visible !== false);
         });
       } catch {
         setError('Overlay is unavailable.');
@@ -68,6 +74,7 @@ const ObsOverlay = () => {
 
   if (error) return <main className="obs-overlay"><p>{error}</p></main>;
   if (!device || !config) return <main className="obs-overlay"><p>Loading overlay...</p></main>;
+  if (!visible) return <main className="obs-overlay" aria-label="Overlay hidden" />;
   const position = device.latitude === null ? [] : [{
     latitude: device.latitude,
     longitude: device.longitude,

@@ -106,6 +106,14 @@ const DeviceDetails = () => {
     } catch (requestError) { setError(requestError.response?.data?.message || requestError.message); }
   };
 
+  const setOverlayVisibility = async (overlayId, visible) => {
+    try {
+      await axios.patch(`/api/v1/overlays/${encodeURIComponent(overlayId)}/visibility`, { visible }, { headers });
+      setOverlays((current) => current.map((overlay) => overlay.id === overlayId ? { ...overlay, visible } : overlay));
+      setError(null);
+    } catch (requestError) { setError(requestError.response?.data?.message || requestError.message); }
+  };
+
   const deleteOverlay = async (overlayId) => {
     if (!window.confirm('Permanently delete this overlay? This cannot be undone.')) return;
     try {
@@ -190,7 +198,7 @@ const DeviceDetails = () => {
           return <article className="device-card" key={overlay.id}><div className="device-card__top"><strong>{overlay.name}</strong><span>{overlay.status}</span></div>
             {overlay.status === 'active' && obsUrl && <div className="obs-link"><button className="button--secondary button--small" onClick={() => setVisibleKeys((current) => ({ ...current, [`url-${overlay.id}`]: !showUrl }))}>{showUrl ? 'Hide OBS link' : 'Generate OBS link'}</button>{showUrl && <><code>{obsUrl}</code><div className="sharing-actions"><button className="button--small" onClick={() => navigator.clipboard.writeText(obsUrl)}>Copy OBS link</button><a className="button button--secondary button--small" href={obsUrl} target="_blank" rel="noreferrer">Open preview</a></div></>}</div>}
             {overlay.status === 'active' && !obsUrl && <p className="panel__hint">Import or replace the pull key in Your keys to generate the complete OBS link.</p>}
-            <div className="device-card__actions">{overlay.status === 'active' && <button onClick={() => navigate(`/devices/${encodeURIComponent(deviceId)}/overlays/${encodeURIComponent(overlay.id)}`)}>Configure</button>}{overlay.status === 'active' && <button className="button--secondary" onClick={() => replaceOverlayKey(overlay.id)}>Replace pull key</button>}{overlay.status === 'active' && <button className="button--secondary" onClick={() => revokeOverlay(overlay.id)}>Disable</button>}<button className="button--danger" onClick={() => deleteOverlay(overlay.id)}>Delete</button></div></article>;
+            <div className="device-card__actions">{overlay.status === 'active' && <button onClick={() => navigate(`/devices/${encodeURIComponent(deviceId)}/overlays/${encodeURIComponent(overlay.id)}`)}>Configure</button>}{overlay.status === 'active' && <button className="button--secondary" onClick={() => setOverlayVisibility(overlay.id, overlay.visible === false)}> {overlay.visible === false ? 'Show in OBS' : 'Hide in OBS'}</button>}{overlay.status === 'active' && <button className="button--secondary" onClick={() => replaceOverlayKey(overlay.id)}>Replace pull key</button>}{overlay.status === 'active' && <button className="button--secondary" onClick={() => revokeOverlay(overlay.id)}>Disable</button>}<button className="button--danger" onClick={() => deleteOverlay(overlay.id)}>Delete</button></div></article>;
         })}{!overlays.length && <p>No overlays created.</p>}</div>
       </section>
       <section className="panel danger-zone"><h2>Danger zone</h2><p>Permanently removes this device, all positions, sessions and overlay configuration.</p><button className="button--danger" onClick={deleteDevice}>Delete device permanently</button></section>

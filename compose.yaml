@@ -47,6 +47,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env file}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
       PORT: 3000
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      KICK_CLIENT_ID: ${KICK_CLIENT_ID:-}
+      KICK_CLIENT_SECRET: ${KICK_CLIENT_SECRET:-}
+      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+      TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
