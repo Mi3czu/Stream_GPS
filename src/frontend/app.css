@@ -96,6 +96,15 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 .key-field { display: flex; gap: 8px; }
 .key-field input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .command-list { display: grid; gap: 12px; }
+.chat-commands-panel { padding: 0; }
+.chat-commands-panel__summary { align-items: center; cursor: pointer; display: flex; gap: 18px; justify-content: space-between; list-style: none; padding: 20px; user-select: none; }
+.chat-commands-panel__summary::-webkit-details-marker { display: none; }
+.chat-commands-panel__summary::after { color: #64748b; content: '⌄'; font-size: 1.3rem; font-weight: 700; line-height: 1; transition: transform .16s ease; }
+.chat-commands-panel[open] .chat-commands-panel__summary::after { transform: rotate(180deg); }
+.chat-commands-panel__summary h2 { font-size: 1.05rem; margin: 0; }
+.chat-commands-panel__summary p { color: #64748b; font-size: .86rem; margin: 5px 0 0; }
+.chat-commands-panel__summary > span { background: #eef4ff; border-radius: 999px; color: #175ea8; font-size: .76rem; font-weight: 750; padding: 6px 10px; white-space: nowrap; }
+.chat-commands-panel__content { border-top: 1px solid #e2e8f0; padding: 0 20px 20px; }
 .command-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; }
 .command-card__header, .command-card__footer { align-items: center; display: flex; gap: 14px; justify-content: space-between; }
 .command-card__header small { color: #64748b; display: block; font-size: .78rem; margin-top: 4px; }
@@ -163,6 +172,10 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 :root[data-theme='dark'] .obs-link code { background: #0f1726; }
 :root[data-theme='dark'] .command-card { background: #0f1726; border-color: #28364b; }
 :root[data-theme='dark'] .command-card__footer { border-color: #28364b; }
+:root[data-theme='dark'] .chat-commands-panel__content { border-color: #28364b; }
+:root[data-theme='dark'] .chat-commands-panel__summary::after,
+:root[data-theme='dark'] .chat-commands-panel__summary p { color: #94a3b8; }
+:root[data-theme='dark'] .chat-commands-panel__summary > span { background: #17365c; color: #9dcbff; }
 :root[data-theme='dark'] .chat-admins { border-color: #28364b; }
 :root[data-theme='dark'] .command-grid label { color: #c8d5e7; }
 :root[data-theme='dark'] .share-link,
@@ -200,6 +213,8 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
   .key-field { align-items: stretch; flex-direction: column; }
   .command-grid { grid-template-columns: 1fr; }
   .command-card__header, .command-card__footer { align-items: flex-start; flex-direction: column; }
+  .chat-commands-panel__summary { align-items: flex-start; flex-wrap: wrap; padding: 16px; }
+  .chat-commands-panel__content { padding: 0 16px 16px; }
   .settings-form, .session-list li { align-items: stretch; flex-direction: column; }
   .settings-form select { min-width: 0; width: 100%; }
   .public-map-page__stats { grid-template-columns: 1fr; }

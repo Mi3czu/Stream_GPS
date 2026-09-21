@@ -222,14 +222,21 @@ const DeviceDetails = () => {
         <div className="sharing-actions"><button onClick={() => updatePublicSharing(!device.public_share_enabled)} className={device.public_share_enabled ? 'button--danger' : ''}>{device.public_share_enabled ? 'Stop sharing' : 'Start sharing'}</button>{device.public_share_id && <button className="button--secondary" onClick={regeneratePublicLink}>Regenerate link</button>}</div>
         {publicMapUrl && <div className="share-link"><div><strong>Public viewer link</strong><code>{publicMapUrl}</code><div className="sharing-actions"><button onClick={() => navigator.clipboard.writeText(publicMapUrl)}>Copy link</button><a className="button button--secondary" href={publicMapUrl} target="_blank" rel="noreferrer">Open preview</a></div>{!device.public_share_enabled && <p className="panel__hint">This link is currently disabled and exposes no location. Starting sharing will reactivate it.</p>}</div>{device.public_share_enabled && <div className="share-qr"><QRCodeSVG value={publicMapUrl} size={150} level="M" title="QR code for the public viewer map" /></div>}</div>}
       </section>
-      <section className="panel"><div className="panel__header"><div><h2>Chat commands</h2><p className="panel__hint">Configure commands once for this device. They remain inactive until you connect Kick or Twitch in Account settings.</p></div></div>
-        <div className="command-list">{chatCommands.map((rule) => <article className="command-card" key={rule.action}>
+      <details className="panel chat-commands-panel">
+        <summary className="chat-commands-panel__summary">
+          <div><h2>Chat command automation</h2><p>Configure which chat actions can control this device.</p></div>
+          <span>{chatCommands.filter((rule) => rule.enabled).length} active · Configure</span>
+        </summary>
+        <div className="chat-commands-panel__content">
+          <p className="panel__hint">Commands stay inactive until a Kick or Twitch channel is explicitly connected in Account settings. A chat message can never grant its sender administrator access.</p>
+          <div className="command-list">{chatCommands.map((rule) => <article className="command-card" key={rule.action}>
           <div className="command-card__header"><div><strong>{rule.label}</strong><small>{rule.action === 'panic' ? 'Always enabled; restricted to owner or admin.' : 'Applies to both connected chat platforms.'}</small></div><label className="switch"><input type="checkbox" checked={rule.enabled} disabled={rule.action === 'panic'} onChange={(event) => changeCommand(rule.action, { enabled: event.target.checked })} /><span /></label></div>
           <div className="command-grid"><label>Command<input value={rule.command} onChange={(event) => changeCommand(rule.action, { command: event.target.value })} /></label><label>Aliases <small>comma-separated</small><input value={rule.aliasesText ?? (rule.aliases || []).join(', ')} onChange={(event) => changeCommand(rule.action, { aliasesText: event.target.value })} placeholder="!mapa, !where" /></label><label>Minimum role<select value={rule.minimum_role} onChange={(event) => changeCommand(rule.action, { minimum_role: event.target.value })} disabled={rule.action === 'panic'}><option value="viewer">Viewer</option><option value="moderator">Moderator</option><option value="admin">Trusted admin</option><option value="owner">Channel owner</option></select></label><label>Cooldown (seconds)<input type="number" min="0" max="3600" value={rule.cooldown_seconds} onChange={(event) => changeCommand(rule.action, { cooldown_seconds: event.target.value })} /></label></div>
           {commandConflict(rule) && <p className="command-card__error">{commandConflict(rule)}</p>}
           <div className="command-card__footer"><label className="checkbox-label"><input type="checkbox" checked={rule.response_enabled} onChange={(event) => changeCommand(rule.action, { response_enabled: event.target.checked })} /> Reply in chat</label><button type="button" onClick={() => saveCommand(rule)} disabled={savingCommand === rule.action || Boolean(commandConflict(rule))}>{savingCommand === rule.action ? 'Saving...' : 'Save command'}</button></div>
-        </article>)}</div>
-      </section>
+          </article>)}</div>
+        </div>
+      </details>
       <section className="panel"><div className="panel__header"><h2>OBS overlays</h2><button onClick={createOverlay}>Create overlay</button></div>
         {overlayResult && <div className="alert alert--success"><strong>OBS URL created:</strong><br /><code>{`${window.location.origin}${overlayResult.overlay_path}`}</code></div>}
         <div className="device-list">{overlays.map((overlay) => {
