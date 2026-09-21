@@ -4,6 +4,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 const { pool } = require('./database/postgres');
 const { authenticate } = require('./auth');
 const { authenticateDevice, sendError } = require('./device-auth');
@@ -20,6 +21,8 @@ const MAX_LOGIN_FAILURES = 5;
 const MAX_GPS_SPEED_KMH = 500;
 const MAX_GPS_PAST_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_GPS_FUTURE_MS = 5 * 60 * 1000;
+const PASSWORD_RESET_TTL_MINUTES = 30;
+const passwordResetCounters = new Map();
 
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is required');
@@ -44,6 +47,41 @@ function decryptSecret(value) {
   } catch {
     return null;
   }
+}
+
+function isPublicRateLimited(key, maxRequests, windowMs) {
+  const now = Date.now();
+  const current = passwordResetCounters.get(key);
+  if (!current || current.resetAt <= now) {
+    passwordResetCounters.set(key, { count: 1, resetAt: now + windowMs });
+    return false;
+  }
+  current.count += 1;
+  return current.count > maxRequests;
+}
+
+function passwordResetTokenHash(token) {
+  return crypto.createHash('sha256').update(`stream-gps-password-reset:${token}`).digest('hex');
+}
+
+async function sendPasswordResetEmail({ email, username, resetUrl }) {
+  if (process.env.SMTP_HOST && process.env.SMTP_FROM) {
+    const transport = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : undefined
+    });
+    await transport.sendMail({
+      from: process.env.SMTP_FROM,
+      to: email,
+      subject: 'Reset your Stream GPS password',
+      text: `Hello ${username},\n\nReset your Stream GPS password within ${PASSWORD_RESET_TTL_MINUTES} minutes:\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`,
+      html: `<p>Hello ${escapeXml(username)},</p><p>Reset your Stream GPS password within ${PASSWORD_RESET_TTL_MINUTES} minutes:</p><p><a href="${escapeXml(resetUrl)}">Reset password</a></p><p>If you did not request this, you can ignore this email.</p>`
+    });
+    return;
+  }
+  if (process.env.NODE_ENV !== 'production') console.info(`Password reset link for ${email}: ${resetUrl}`);
 }
 
 app.set('trust proxy', 1);
@@ -532,7 +570,7 @@ app.get('/health', async (req, res) => {
 app.get('/ready', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = '008_privacy_retention.sql') AS migrations_ready`
+      `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = '013_password_reset_tokens.sql') AS migrations_ready`
     );
     if (!result.rows[0].migrations_ready) return res.status(503).json({ status: 'not_ready', database: 'ok', migrations: 'pending' });
     res.json({ status: 'ready', database: 'ok', migrations: 'ok' });
@@ -549,6 +587,70 @@ app.get('/api/setup/status', async (req, res) => {
     console.error('Setup status error:', error.message);
     res.status(500).json({ message: 'Unable to check setup status' });
   }
+});
+
+app.post('/api/password-reset/request', async (req, res) => {
+  const genericMessage = 'If that email belongs to an account, a password reset link has been sent.';
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const ipKey = `reset-ip:${req.ip}`;
+  const emailKey = `reset-email:${crypto.createHash('sha256').update(email).digest('hex')}`;
+  if (isPublicRateLimited(ipKey, 10, 60 * 60 * 1000) || isPublicRateLimited(emailKey, 3, 60 * 60 * 1000)) {
+    res.set('Retry-After', '3600');
+    return res.status(429).json({ message: 'Too many password reset requests. Try again later.' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(202).json({ message: genericMessage });
+  try {
+    const result = await pool.query('SELECT id, username, email FROM admins WHERE email = $1', [email]);
+    const user = result.rows[0];
+    if (user) {
+      const token = crypto.randomBytes(32).toString('base64url');
+      const baseUrl = String(process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+      const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+      await pool.query('DELETE FROM password_reset_tokens WHERE admin_id = $1 OR expires_at <= NOW()', [user.id]);
+      await pool.query(
+        `INSERT INTO password_reset_tokens (admin_id, token_hash, expires_at, requested_ip)
+         VALUES ($1, $2, NOW() + ($3 * INTERVAL '1 minute'), $4)`,
+        [user.id, passwordResetTokenHash(token), PASSWORD_RESET_TTL_MINUTES, req.ip]
+      );
+      try { await sendPasswordResetEmail({ email: user.email, username: user.username, resetUrl }); }
+      catch (mailError) { console.error('Password reset email error:', mailError.message); }
+      req.user = { sub: user.id };
+      await recordAudit(req, 'account.password_reset_requested', 'account', user.id);
+    }
+    res.status(202).json({ message: genericMessage });
+  } catch (error) {
+    console.error('Password reset request error:', error.message);
+    res.status(202).json({ message: genericMessage });
+  }
+});
+
+app.post('/api/password-reset/confirm', async (req, res) => {
+  const token = String(req.body.token || '');
+  const password = String(req.body.password || '');
+  if (!token || password.length < 12) return res.status(400).json({ message: 'A valid reset link and a password of at least 12 characters are required.' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const reset = await client.query(
+      `SELECT id, admin_id FROM password_reset_tokens
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW() FOR UPDATE`,
+      [passwordResetTokenHash(token)]
+    );
+    if (!reset.rows[0]) { await client.query('ROLLBACK'); return res.status(400).json({ message: 'This password reset link is invalid or has expired.' }); }
+    const resetId = reset.rows[0].id;
+    const adminId = reset.rows[0].admin_id;
+    await client.query('UPDATE admins SET password_hash = $1, updated_at = NOW() WHERE id = $2', [await bcrypt.hash(password, 12), adminId]);
+    await client.query('UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1', [resetId]);
+    await client.query('UPDATE admin_sessions SET revoked_at = NOW() WHERE admin_id = $1 AND revoked_at IS NULL', [adminId]);
+    await client.query('COMMIT');
+    req.user = { sub: adminId };
+    await recordAudit(req, 'account.password_reset_completed', 'account', adminId);
+    res.json({ message: 'Password updated. Please log in with your new password.' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Password reset confirm error:', error.message);
+    res.status(500).json({ message: 'Unable to reset password' });
+  } finally { client.release(); }
 });
 
 app.post('/api/register', async (req, res) => {

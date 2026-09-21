@@ -25,6 +25,9 @@ def register_and_login(label):
 def main():
     assert request('GET', '/health')['database'] == 'ok'
     owner = register_and_login('owner'); stranger = register_and_login('stranger')
+    reset_response = request('POST', '/api/password-reset/request', {'email': f'ci_owner_{RUN}@example.test'}, expected=202)
+    assert 'reset link' in reset_response['message'].lower()
+    request('POST', '/api/password-reset/request', {'email': 'unknown@example.test'}, expected=202)
     device_id = f'ci_device_{RUN}'
     created = request('POST', '/api/v1/devices', {'name': 'CI tracker', 'device_id': device_id}, owner, expected=201)
     device_key = created['device_key']

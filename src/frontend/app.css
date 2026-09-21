@@ -119,6 +119,9 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
 .auth-page { align-items: center; background: #f4f7fb; display: flex; justify-content: center; min-height: 100vh; padding: 24px; position: relative; }
 .auth-card { background: white; border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 12px 32px rgba(15, 23, 42, .08); max-width: 440px; padding: 30px; width: 100%; }
 .auth-card form { flex-direction: column; }
+.auth-message { border-radius: 8px; margin: 14px 0; padding: 10px 12px; }
+.auth-message--success { background: #dcfae6; color: #067647; }
+.auth-message--error { background: #fee4e2; color: #b42318; }
 :root[data-theme='dark'] .app-content { background: #0b1120; }
 :root[data-theme='dark'] .stat-card,
 :root[data-theme='dark'] .panel,

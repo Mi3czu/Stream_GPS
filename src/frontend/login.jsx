@@ -65,6 +65,7 @@ const Login = () => {
 
       {error && <p style={{ color: 'red' }}>{error}</p>}
       {success && <p style={{ color: 'green' }}>{success}</p>}
+      <p><Link to="/forgot-password">Forgot your password?</Link></p>
       <p>New to Stream GPS? <Link to="/register">Create an account</Link></p>
       </div>
     </div>

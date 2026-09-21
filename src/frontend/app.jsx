@@ -13,6 +13,8 @@ const OverlaySettings = lazy(() => import('./overlay-settings.jsx'));
 const AuditLog = lazy(() => import('./audit-log.jsx'));
 const AccountSettings = lazy(() => import('./account-settings.jsx'));
 const PublicMap = lazy(() => import('./public-map.jsx'));
+const ResetPassword = lazy(() => import('./reset-password.jsx'));
+const RequestPasswordReset = lazy(() => import('./reset-password.jsx').then((module) => ({ default: module.RequestPasswordReset })));
 
 function Home() {
   return (
@@ -39,6 +41,8 @@ export default function App() {
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<RequestPasswordReset />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/overlay/:overlayId" element={<ObsOverlay />} />
       <Route path="/map/:shareId" element={<PublicMap />} />
       <Route element={<AppShell />}>
