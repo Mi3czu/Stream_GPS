@@ -1612,9 +1612,6 @@ app.post('/api/v1/gps/update', authenticateDevice, async (req, res) => {
   const validated = validateGpsPosition(req.body);
   if (validated.error) return sendError(res, 400, validated.error, validated.message);
   const { position } = validated;
-  if (req.device.last_recorded_at && position.recordedAt.getTime() <= new Date(req.device.last_recorded_at).getTime()) {
-    return sendError(res, 409, 'GPS_POSITION_OUT_OF_ORDER', 'recorded_at must be newer than the last accepted position');
-  }
   const client = await pool.connect();
 
   try {

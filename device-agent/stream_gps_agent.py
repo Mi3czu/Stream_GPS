@@ -2,6 +2,7 @@
 """Standalone Stream GPS agent. It does not import or modify BelaUI."""
 
 import argparse, base64, hashlib, hmac, html, json, os, re, secrets, shutil, subprocess, tempfile, threading, time, urllib.error, urllib.request, uuid
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -220,7 +221,7 @@ def parse_mmcli(text):
     longitude = number('modem.location.gps.longitude')
     latitude = latitude if latitude is not None else nmea.get('latitude'); longitude = longitude if longitude is not None else nmea.get('longitude')
     if latitude is None or longitude is None: return None
-    position = {'latitude': latitude, 'longitude': longitude, 'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+    position = {'latitude': latitude, 'longitude': longitude, 'recorded_at': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')}
     mappings = {'altitude': ('modem.location.gps.altitude',), 'speed': ('modem.location.gps.speed',),
                 'heading': ('modem.location.gps.heading',), 'accuracy': ('modem.location.gps.accuracy',),
                 'satellites': ('modem.location.gps.satellites',)}
@@ -252,6 +253,8 @@ def write_queue(items):
     os.chmod(QUEUE_PATH, 0o600)
     with LOCK: STATUS['queue_size'] = len(items[-5000:])
 
+class PositionOutOfOrderError(Exception): pass
+
 def upload(config, position):
     body = json.dumps({key: value for key, value in position.items() if not key.startswith('_')}).encode()
     request = urllib.request.Request(config['api_url'].rstrip('/') + '/api/v1/gps/update', data=body, method='POST', headers={
@@ -259,8 +262,14 @@ def upload(config, position):
         'X-Device-Id': config['device_id'], 'X-Request-Timestamp': str(int(time.time())),
         'X-Request-Nonce': str(uuid.uuid4()), 'User-Agent': 'Stream-GPS-Device/1.0'
     })
-    with urllib.request.urlopen(request, timeout=15) as response:
-        if response.status not in (200, 201): raise RuntimeError('API returned HTTP ' + str(response.status))
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            if response.status not in (200, 201): raise RuntimeError('API returned HTTP ' + str(response.status))
+    except urllib.error.HTTPError as error:
+        response_body = error.read().decode('utf-8', 'replace')
+        if error.code == 409 and 'GPS_POSITION_OUT_OF_ORDER' in response_body:
+            raise PositionOutOfOrderError('Position is older than the last accepted update') from error
+        raise
 
 def device_api(config, method='GET', payload=None):
     body = json.dumps(payload).encode() if payload is not None else None
@@ -399,6 +408,10 @@ def tracking_loop():
             remaining = []
             for index, item in enumerate(pending):
                 try: upload(config, item)
+                except PositionOutOfOrderError:
+                    # A prior release only used whole-second timestamps. Drop
+                    # those stale duplicates so they cannot block new uploads.
+                    continue
                 except Exception as error:
                     remaining = pending[index:]
                     with LOCK: STATUS['last_error'] = str(error)
