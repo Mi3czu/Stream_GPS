@@ -46,10 +46,12 @@ const DarkVectorMap = ({ points, speed, zoomConfig, connectPoints, zoomControl, 
         if (connectPoints) map.addLayer({ id: 'stream-gps-route', type: 'line', source: 'stream-gps-positions', paint: { 'line-color': '#2387ef', 'line-width': 4 } });
         map.addLayer({ id: 'stream-gps-points', type: 'circle', source: 'stream-gps-positions', paint: { 'circle-radius': ['case', ['get', 'latest'], 9, 5], 'circle-color': ['case', ['get', 'latest'], '#12b76a', '#53b1fd'], 'circle-stroke-color': ['case', ['get', 'latest'], '#067647', '#0b6bcb'], 'circle-stroke-width': 2 } });
       } else map.getSource('stream-gps-positions').setData(sourceData);
-      if (points.length === 1) { map.setCenter([points[0][1], points[0][0]]); map.setZoom(zoomForSpeed(speed, zoomConfig)); }
+      // OpenFreeMap's public vector source ends at z14. Requesting z15+ yields
+      // valid but empty tiles, so clamp only this dark provider's auto-zoom.
+      if (points.length === 1) { map.setCenter([points[0][1], points[0][0]]); map.setZoom(Math.min(14, zoomForSpeed(speed, zoomConfig))); }
       if (points.length > 1) {
         const bounds = points.reduce((value, point) => value.extend([point[1], point[0]]), new maplibregl.LngLatBounds([points[0][1], points[0][0]], [points[0][1], points[0][0]]));
-        map.fitBounds(bounds, { padding: 32, maxZoom: 15 });
+        map.fitBounds(bounds, { padding: 32, maxZoom: 14 });
       }
     };
     if (map.isStyleLoaded()) update(); else map.once('load', update);
