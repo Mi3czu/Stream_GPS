@@ -927,7 +927,7 @@ app.post('/api/v1/devices', authenticate, async (req, res) => {
     res.status(201).json({
       device: result.rows[0],
       device_key: deviceKey,
-      warning: 'Save device_key now. It is shown only once and cannot be recovered.'
+      warning: 'Treat device_key as a password. The device owner can reveal it later in the dashboard credentials section.'
     });
   } catch (error) {
     if (error.code === '23505') {
@@ -1498,7 +1498,7 @@ app.post('/api/v1/devices/:deviceId/rotate-key', authenticate, async (req, res) 
     );
     if (!result.rows[0]) return sendError(res, 404, 'DEVICE_NOT_FOUND', 'Active device not found');
     await recordAudit(req, 'device.key_replaced', 'device', req.params.deviceId);
-    res.json({ device: result.rows[0], device_key: deviceKey, warning: 'Save device_key now. It is shown only once.' });
+    res.json({ device: result.rows[0], device_key: deviceKey, warning: 'Treat device_key as a password. The device owner can reveal it later in the dashboard credentials section.' });
   } catch (error) {
     console.error('Rotate key error:', error.message);
     sendError(res, 500, 'DEVICE_KEY_ROTATION_FAILED', 'Unable to rotate device key');

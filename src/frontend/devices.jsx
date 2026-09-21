@@ -74,9 +74,9 @@ const Devices = () => {
         </form>
       </section>
       {issuedKey && <section className="panel" style={{ borderColor: '#f79009' }}>
-        <h2>Save these credentials now</h2><p>This key is shown only once. Store it in the GPS device configuration and never commit it to Git.</p>
+        <h2>Your device credentials</h2><p>Use this key to connect the GPS agent. You can reveal and copy it again later in this device's <strong>Your keys</strong> section. Never publish it or commit it to Git.</p>
         <p><strong>DEVICE_ID:</strong> <code>{issuedKey.deviceId}</code></p><p><strong>DEVICE_KEY:</strong> <code>{issuedKey.deviceKey}</code></p>
-        <button type="button" className="button--secondary" onClick={() => setIssuedKey(null)}>I saved the key</button>
+        <div className="sharing-actions"><Link className="button" to={`/devices/${encodeURIComponent(issuedKey.deviceId)}`}>Open device setup</Link><button type="button" className="button--secondary" onClick={() => setIssuedKey(null)}>Close</button></div>
       </section>}
       <section className="panel">
         <div className="panel__header"><h2>Registered devices</h2><span>{visibleDevices.length} of {devices.length}</span></div>
