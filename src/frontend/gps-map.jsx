@@ -101,10 +101,10 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
           url={tiles.url}
         />
         <MapViewport points={points} speed={latestPosition?.speed} zoomConfig={zoomConfig} followLatest={followLatest} />
-        {connectPoints && !fadingTrail && routeSegments.map((segment, index) => segment.length > 1 && <Polyline key={`route-${index}`} positions={segment} pathOptions={{ color: '#0b6bcb', weight: 4 }} />)}
+        {connectPoints && !fadingTrail && routeSegments.map((segment, index) => segment.length > 1 && <Polyline key={`route-${index}`} positions={segment} pathOptions={{ color: '#0b6bcb', weight: 4, lineCap: 'round', lineJoin: 'round' }} />)}
         {connectPoints && fadingTrail && routeSegments.flatMap((segment, segmentIndex) => segment.slice(1).map((point, pointIndex) => {
           const progress = (pointIndex + 1) / Math.max(1, segment.length - 1);
-          return <Polyline key={`trail-${segmentIndex}-${pointIndex}`} positions={[segment[pointIndex], point]} pathOptions={{ color: '#53b1fd', weight: 5, opacity: 0.08 + progress * 0.82 }} />;
+          return <Polyline key={`trail-${segmentIndex}-${pointIndex}`} positions={[segment[pointIndex], point]} pathOptions={{ color: '#53b1fd', weight: 5, opacity: 0.08 + progress * 0.82, lineCap: 'round', lineJoin: 'round' }} />;
         }))}
         {markerPositions.map((position, index) => {
           const point = [Number(position.latitude), Number(position.longitude)];
