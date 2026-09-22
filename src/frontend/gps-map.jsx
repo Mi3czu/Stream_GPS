@@ -36,7 +36,7 @@ const roundedSegment = (segment) => {
     const incoming = [(corner[0] - previous[0]) * 111320 / incomingLength, (corner[1] - previous[1]) * longitudeScale / incomingLength];
     const outgoing = [(next[0] - corner[0]) * 111320 / outgoingLength, (next[1] - corner[1]) * longitudeScale / outgoingLength];
     const turnDegrees = Math.acos(Math.max(-1, Math.min(1, incoming[0] * outgoing[0] + incoming[1] * outgoing[1]))) * 180 / Math.PI;
-    const radius = Math.min(1.5, incomingLength * 0.25, outgoingLength * 0.25);
+    const radius = Math.min(2.5, incomingLength * 0.25, outgoingLength * 0.25);
     if (!Number.isFinite(turnDegrees) || turnDegrees < 30 || turnDegrees > 150 || radius < 0.35) {
       rounded.push(corner);
       continue;
