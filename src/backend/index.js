@@ -8,7 +8,7 @@ const nodemailer = require('nodemailer');
 const { pool } = require('./database/postgres');
 const { authenticate } = require('./auth');
 const { authenticateDevice, invalidateDeviceAuth, sendError } = require('./device-auth');
-const { simplifyRoute, stabilizeStationaryDrift } = require('./route-simplify');
+const { simplifyRoute } = require('./route-simplify');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -1208,8 +1208,7 @@ app.get('/api/v1/devices/:deviceId/history', authenticate, async (req, res) => {
          ORDER BY recorded_at ASC`,
         [...filters, stride, sourcePointCount]
       );
-      const routeSource = req.query.drift === 'stationary' ? stabilizeStationaryDrift(result.rows) : result.rows;
-      const route = simplifyRoute(routeSource, { maxPoints });
+      const route = simplifyRoute(result.rows, { maxPoints });
       res.json({
         positions: route.points,
         route: {
@@ -1529,8 +1528,7 @@ app.get('/api/v1/overlays/:overlayId/trail', async (req, res) => {
        LIMIT 2000`,
       [overlay.device_db_id, durationMinutes]
     );
-    const sourcePoints = result.rows.reverse();
-    const route = simplifyRoute(overlayConfig.mapRenderMode === 'rounded' ? stabilizeStationaryDrift(sourcePoints) : sourcePoints, { maxPoints: 160 });
+    const route = simplifyRoute(result.rows.reverse(), { maxPoints: 160 });
     res.set('Cache-Control', 'no-store');
     res.json({ positions: route.points });
   } catch (error) {
