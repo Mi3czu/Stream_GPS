@@ -54,6 +54,7 @@ const DeviceDetails = () => {
     if (!token) { navigate('/login', { replace: true }); return; }
     const params = new URLSearchParams({ limit: '5000' });
     if (routeMode !== 'legacy') { params.set('route', 'smart'); params.set('max_points', '2500'); }
+    if (routeMode === 'rounded') params.set('drift', 'stationary');
     if (rangeHours !== 'all') params.set('from', new Date(Date.now() - Number(rangeHours) * 3600000).toISOString());
     try {
       const [deviceResponse, historyResponse, overlaysResponse, credentialsResponse, commandsResponse] = await Promise.all([

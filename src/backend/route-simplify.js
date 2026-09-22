@@ -56,6 +56,45 @@ const simplifySegment = (segment, toleranceMeters) => {
   return [...retained].sort((a, b) => a - b).map((index) => segment[index]);
 };
 
+const positionDistanceMeters = (first, second) => {
+  const latitudeScale = METERS_PER_DEGREE_LATITUDE;
+  const longitudeScale = latitudeScale * Math.cos(((Number(first.latitude) + Number(second.latitude)) / 2) * Math.PI / 180);
+  return Math.hypot(
+    (Number(second.latitude) - Number(first.latitude)) * latitudeScale,
+    (Number(second.longitude) - Number(first.longitude)) * longitudeScale
+  );
+};
+
+// Visual-only correction: retain every source row, but use one anchored point
+// after a stationary cluster has been observed. It must run before RDP so the
+// cluster is still available to distinguish drift from a real route segment.
+const stabilizeStationaryDrift = (points) => {
+  let anchor = null;
+  let stationarySamples = 0;
+  return points.map((point) => {
+    const speed = Number(point.speed);
+    const isVerySlow = Number.isFinite(speed) && speed < 1.2;
+    if (!anchor || !isVerySlow) {
+      anchor = point;
+      stationarySamples = 0;
+      return point;
+    }
+    const accuracy = Number(point.accuracy);
+    const radius = Math.max(8, Math.min(20, Number.isFinite(accuracy) ? accuracy * 2.5 : 12));
+    const distance = positionDistanceMeters(anchor, point);
+    if (distance <= radius) {
+      stationarySamples += 1;
+      return stationarySamples >= 3 ? { ...point, latitude: anchor.latitude, longitude: anchor.longitude, stationary_corrected: true } : point;
+    }
+    if (stationarySamples >= 3 && distance <= radius * 2.5) {
+      return { ...point, latitude: anchor.latitude, longitude: anchor.longitude, stationary_corrected: true };
+    }
+    anchor = point;
+    stationarySamples = 0;
+    return point;
+  });
+};
+
 const simplifyRoute = (points, { maxPoints = 2500, toleranceMeters = 3, gapMilliseconds = 60000 } = {}) => {
   const segments = splitOnTimeGaps(points, gapMilliseconds);
   const simplifyAt = (tolerance) => segments.map((segment) => simplifySegment(segment, tolerance));
@@ -97,4 +136,4 @@ const simplifyRoute = (points, { maxPoints = 2500, toleranceMeters = 3, gapMilli
   };
 };
 
-module.exports = { simplifyRoute };
+module.exports = { simplifyRoute, stabilizeStationaryDrift };
