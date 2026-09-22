@@ -27,6 +27,15 @@ const MAX_GPS_PAST_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_GPS_FUTURE_MS = 5 * 60 * 1000;
 const PASSWORD_RESET_TTL_MINUTES = 30;
 const passwordResetCounters = new Map();
+const KICK_WEBHOOK_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq/+l1WnlRrGSolDMA+A8
+6rAhMbQGmQ2SapVcGM3zq8ANXjnhDWocMqfWcTd95btDydITa10kDvHzw9WQOqp2
+MZI7ZyrfzJuz5nhTPCiJwTwnEtWft7nV14BYRDHvlfqPUaZ+1KR4OCaO/wWIk/rQ
+L/TjY0M70gse8rlBkbo2a8rKhu69RQTRsoaf4DVhDPEeSeI5jVrRDGAMGL3cGuyY
+6CLKGdjVEM78g3JfYOvDU/RvfqD7L89TZ3iN94jrmWdGz34JNlEI5hqK8dd7C5EF
+BEbZ5jgB8s8ReQV8H+MkuffjdAj3ajDDX3DOJMIut1lBrUVD1AaSrGCKHooWoL2e
+twIDAQAB
+-----END PUBLIC KEY-----`;
 
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is required');
@@ -89,7 +98,7 @@ async function sendPasswordResetEmail({ email, username, resetUrl }) {
 }
 
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '100kb' }));
+app.use(express.json({ limit: '100kb', verify: (req, res, buffer) => { req.rawBody = buffer; } }));
 
 function chatConfiguration(platform) {
   const upper = platform.toUpperCase();
@@ -178,6 +187,38 @@ async function sendTwitchMessage(integration, text) {
     body: JSON.stringify({ broadcaster_id: integration.channel_id, sender_id: integration.channel_id, message: String(text).slice(0, 450) })
   });
   if (!response.ok) throw new Error(`Twitch chat reply returned ${response.status}`);
+}
+
+async function kickAccessToken(integration) {
+  if (integration.token_expires_at && new Date(integration.token_expires_at).getTime() > Date.now() + 60_000) return decryptSecret(integration.access_token_encrypted);
+  const refreshToken = decryptSecret(integration.refresh_token_encrypted);
+  if (!refreshToken) throw new Error('Kick refresh token is unavailable');
+  const body = new URLSearchParams({ client_id: process.env.KICK_CLIENT_ID, client_secret: process.env.KICK_CLIENT_SECRET, grant_type: 'refresh_token', refresh_token: refreshToken });
+  const response = await fetch('https://id.kick.com/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  if (!response.ok) throw new Error(`Kick token refresh returned ${response.status}`);
+  const tokens = await response.json();
+  const access = encryptSecret(tokens.access_token); const refresh = encryptSecret(tokens.refresh_token);
+  await pool.query("UPDATE chat_integrations SET access_token_encrypted = $2, refresh_token_encrypted = $3, token_expires_at = NOW() + ($4 * INTERVAL '1 second'), updated_at = NOW() WHERE id = $1", [integration.id, access, refresh, Number(tokens.expires_in || 0)]);
+  integration.access_token_encrypted = access; integration.refresh_token_encrypted = refresh; integration.token_expires_at = new Date(Date.now() + Number(tokens.expires_in || 0) * 1000);
+  return tokens.access_token;
+}
+
+async function sendKickMessage(integration, text) {
+  const token = await kickAccessToken(integration);
+  const response = await fetch('https://api.kick.com/public/v1/chat', {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: String(text).slice(0, 500), type: 'user', broadcaster_user_id: Number(integration.channel_id) })
+  });
+  if (!response.ok) throw new Error(`Kick chat reply returned ${response.status}`);
+}
+
+async function subscribeKickChatEvents(integration) {
+  const token = await kickAccessToken(integration);
+  const response = await fetch('https://api.kick.com/public/v1/events/subscriptions', {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method: 'webhook', events: [{ name: 'chat.message.sent', version: 1 }] })
+  });
+  if (!response.ok) throw new Error(`Kick event subscription returned ${response.status}`);
 }
 
 async function findActiveChatDevice(ownerId) {
@@ -270,6 +311,47 @@ async function handleTwitchChatMessage(integration, event) {
     if (rule.response_enabled) await sendTwitchMessage(integration, reply);
   } catch (error) {
     console.error('Twitch chat command error:', error.message);
+    await pool.query("UPDATE chat_command_events SET outcome = 'failed' WHERE id = $1", [eventId]);
+  }
+}
+
+async function handleKickChatMessage(integration, event) {
+  const text = String(event.content || '').trim().toLowerCase();
+  const command = text.split(/\s+/, 1)[0];
+  if (!CHAT_COMMAND_PATTERN.test(command)) return;
+  const senderId = String(event.sender?.user_id || '');
+  const inserted = await pool.query(
+    `INSERT INTO chat_command_events (integration_id, platform_event_id, platform_user_id, command, outcome)
+     VALUES ($1, $2, $3, $4, 'received') ON CONFLICT (integration_id, platform_event_id) DO NOTHING RETURNING id`,
+    [integration.id, event.message_id, senderId, command]
+  );
+  if (!inserted.rows[0]) return;
+  const eventId = inserted.rows[0].id;
+  try {
+    const devices = await findActiveChatDevice(integration.owner_id);
+    if (devices.length !== 1) {
+      await pool.query("UPDATE chat_command_events SET outcome = 'inactive_device' WHERE id = $1", [eventId]);
+      await sendKickMessage(integration, devices.length ? 'More than one GPS device is active; command was not applied.' : 'No active GPS device is currently sending positions.');
+      return;
+    }
+    const device = devices[0];
+    await ensureDeviceChatRules(device.id);
+    const rules = await pool.query('SELECT * FROM device_chat_command_rules WHERE device_id = $1 AND enabled = TRUE', [device.id]);
+    const rule = rules.rows.find((candidate) => [candidate.command, ...(candidate.aliases || [])].map((item) => String(item).toLowerCase()).includes(command));
+    if (!rule) { await pool.query("UPDATE chat_command_events SET outcome = 'ignored' WHERE id = $1", [eventId]); return; }
+    let role = senderId === String(integration.channel_id) ? 'owner' : 'viewer';
+    if (event.sender?.identity?.badges?.some((badge) => badge.type === 'moderator')) role = 'moderator';
+    const saved = await pool.query('SELECT role FROM chat_authorized_users WHERE integration_id = $1 AND platform_user_id = $2', [integration.id, senderId]);
+    if (saved.rows[0] && chatRoleRank[saved.rows[0].role] > chatRoleRank[role]) role = saved.rows[0].role;
+    if (chatRoleRank[role] < chatRoleRank[rule.minimum_role]) { await pool.query("UPDATE chat_command_events SET outcome = 'unauthorized' WHERE id = $1", [eventId]); return; }
+    const cooldownKey = `kick:${integration.id}:${device.id}:${rule.action}`;
+    if ((twitchCooldowns.get(cooldownKey) || 0) > Date.now()) { await pool.query("UPDATE chat_command_events SET outcome = 'cooldown' WHERE id = $1", [eventId]); return; }
+    const reply = await executeTwitchCommand(integration, device, rule);
+    twitchCooldowns.set(cooldownKey, Date.now() + Number(rule.cooldown_seconds || 0) * 1000);
+    await pool.query("UPDATE chat_command_events SET outcome = 'completed', metadata = $2::jsonb WHERE id = $1", [eventId, JSON.stringify({ action: rule.action, device_id: device.device_id, role })]);
+    if (rule.response_enabled) await sendKickMessage(integration, reply);
+  } catch (error) {
+    console.error('Kick chat command error:', error.message);
     await pool.query("UPDATE chat_command_events SET outcome = 'failed' WHERE id = $1", [eventId]);
   }
 }
@@ -426,11 +508,33 @@ app.get('/api/v1/chat/kick/callback', async (req, res) => {
        ON CONFLICT (owner_id, platform) DO UPDATE SET enabled = TRUE, channel_id = EXCLUDED.channel_id, channel_name = EXCLUDED.channel_name, access_token_encrypted = EXCLUDED.access_token_encrypted, refresh_token_encrypted = EXCLUDED.refresh_token_encrypted, token_expires_at = EXCLUDED.token_expires_at, settings = chat_integrations.settings || EXCLUDED.settings, updated_at = NOW()`,
       [state.ownerId, String(user.user_id), user.name, encryptSecret(tokens.access_token), encryptSecret(tokens.refresh_token), Number(tokens.expires_in || 0), JSON.stringify({ oauth_scopes: tokens.scope || [] })]
     );
+    const integration = await pool.query("SELECT * FROM chat_integrations WHERE owner_id = $1 AND platform = 'kick'", [state.ownerId]);
+    await subscribeKickChatEvents(integration.rows[0]);
     await recordAudit({ user: { sub: state.ownerId }, ip: req.ip }, 'chat.kick.connected', 'chat_integration', 'kick', { channel_id: user.user_id });
     res.redirect(`${accountUrl}?chat=kick-connected`);
   } catch (error) {
     console.error('Kick OAuth callback error:', error.message);
     res.redirect(`${accountUrl}?chat=kick-error`);
+  }
+});
+
+app.post('/api/v1/chat/kick/webhook', async (req, res) => {
+  const messageId = req.get('Kick-Event-Message-Id');
+  const timestamp = req.get('Kick-Event-Message-Timestamp');
+  const signature = req.get('Kick-Event-Signature');
+  const payload = req.rawBody || Buffer.alloc(0);
+  try {
+    if (!messageId || !timestamp || !signature || Math.abs(Date.now() - new Date(timestamp).getTime()) > 5 * 60_000) return res.sendStatus(401);
+    const signed = Buffer.concat([Buffer.from(`${messageId}.${timestamp}.`), payload]);
+    if (!crypto.verify('RSA-SHA256', signed, KICK_WEBHOOK_PUBLIC_KEY, Buffer.from(signature, 'base64'))) return res.sendStatus(401);
+    if (req.get('Kick-Event-Type') !== 'chat.message.sent') return res.sendStatus(204);
+    const channelId = String(req.body?.broadcaster?.user_id || '');
+    const result = await pool.query("SELECT * FROM chat_integrations WHERE platform = 'kick' AND enabled = TRUE AND channel_id = $1", [channelId]);
+    if (result.rows[0]) await handleKickChatMessage(result.rows[0], req.body);
+    res.sendStatus(204);
+  } catch (error) {
+    console.error('Kick webhook error:', error.message);
+    res.sendStatus(500);
   }
 });
 
