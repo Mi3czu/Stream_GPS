@@ -124,8 +124,23 @@ const CHAT_COMMAND_PATTERN = /^![a-z0-9_-]{1,24}$/i;
 const ACTIVE_CHAT_DEVICE_WINDOW_SECONDS = 30;
 const twitchSockets = new Map();
 const twitchCooldowns = new Map();
+const kickOAuthStates = new Map();
 
 const chatRoleRank = { viewer: 0, moderator: 1, admin: 2, owner: 3 };
+
+const kickRedirectUri = () => `${publicBaseUrl()}/api/v1/chat/kick/callback`;
+
+function kickPkcePair() {
+  const verifier = crypto.randomBytes(48).toString('base64url');
+  return { verifier, challenge: crypto.createHash('sha256').update(verifier).digest('base64url') };
+}
+
+async function exchangeKickCode(code, verifier) {
+  const body = new URLSearchParams({ client_id: process.env.KICK_CLIENT_ID, client_secret: process.env.KICK_CLIENT_SECRET, code, grant_type: 'authorization_code', redirect_uri: kickRedirectUri(), code_verifier: verifier });
+  const response = await fetch('https://id.kick.com/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  if (!response.ok) throw new Error(`Kick token exchange returned ${response.status}`);
+  return response.json();
+}
 
 function closeTwitchSocket(integrationId) {
   const connection = twitchSockets.get(String(integrationId));
@@ -357,6 +372,16 @@ app.post('/api/v1/chat/twitch/connect', authenticate, (req, res) => {
   res.json({ authorization_url: authorizationUrl.toString() });
 });
 
+app.post('/api/v1/chat/kick/connect', authenticate, (req, res) => {
+  if (!chatConfiguration('kick').configured) return sendError(res, 503, 'KICK_NOT_CONFIGURED', 'Kick OAuth is not configured on this server');
+  const state = crypto.randomBytes(32).toString('base64url');
+  const pkce = kickPkcePair();
+  kickOAuthStates.set(state, { ownerId: req.user.sub, verifier: pkce.verifier, expiresAt: Date.now() + 10 * 60_000 });
+  const authorizationUrl = new URL('https://id.kick.com/oauth/authorize');
+  authorizationUrl.search = new URLSearchParams({ client_id: process.env.KICK_CLIENT_ID, redirect_uri: kickRedirectUri(), response_type: 'code', scope: 'user:read chat:write events:subscribe', state, code_challenge: pkce.challenge, code_challenge_method: 'S256' }).toString();
+  res.json({ authorization_url: authorizationUrl.toString() });
+});
+
 app.get('/api/v1/chat/twitch/callback', async (req, res) => {
   const accountUrl = `${publicBaseUrl()}/account`;
   try {
@@ -381,6 +406,31 @@ app.get('/api/v1/chat/twitch/callback', async (req, res) => {
   } catch (error) {
     console.error('Twitch OAuth callback error:', error.message);
     res.redirect(`${accountUrl}?chat=twitch-error`);
+  }
+});
+
+app.get('/api/v1/chat/kick/callback', async (req, res) => {
+  const accountUrl = `${publicBaseUrl()}/account`;
+  const state = typeof req.query.state === 'string' ? kickOAuthStates.get(req.query.state) : null;
+  try {
+    if (!chatConfiguration('kick').configured || typeof req.query.code !== 'string' || !state || state.expiresAt < Date.now()) throw new Error('Missing or expired OAuth response');
+    kickOAuthStates.delete(req.query.state);
+    const tokens = await exchangeKickCode(req.query.code, state.verifier);
+    const profileResponse = await fetch('https://api.kick.com/public/v1/users', { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+    if (!profileResponse.ok) throw new Error(`Kick profile request returned ${profileResponse.status}`);
+    const user = (await profileResponse.json()).data?.[0];
+    if (!user?.user_id || !user?.name) throw new Error('Kick user profile unavailable');
+    await pool.query(
+      `INSERT INTO chat_integrations (owner_id, platform, enabled, channel_id, channel_name, access_token_encrypted, refresh_token_encrypted, token_expires_at, settings)
+       VALUES ($1, 'kick', TRUE, $2, $3, $4, $5, NOW() + ($6 * INTERVAL '1 second'), $7::jsonb)
+       ON CONFLICT (owner_id, platform) DO UPDATE SET enabled = TRUE, channel_id = EXCLUDED.channel_id, channel_name = EXCLUDED.channel_name, access_token_encrypted = EXCLUDED.access_token_encrypted, refresh_token_encrypted = EXCLUDED.refresh_token_encrypted, token_expires_at = EXCLUDED.token_expires_at, settings = chat_integrations.settings || EXCLUDED.settings, updated_at = NOW()`,
+      [state.ownerId, String(user.user_id), user.name, encryptSecret(tokens.access_token), encryptSecret(tokens.refresh_token), Number(tokens.expires_in || 0), JSON.stringify({ oauth_scopes: tokens.scope || [] })]
+    );
+    await recordAudit({ user: { sub: state.ownerId }, ip: req.ip }, 'chat.kick.connected', 'chat_integration', 'kick', { channel_id: user.user_id });
+    res.redirect(`${accountUrl}?chat=kick-connected`);
+  } catch (error) {
+    console.error('Kick OAuth callback error:', error.message);
+    res.redirect(`${accountUrl}?chat=kick-error`);
   }
 });
 
