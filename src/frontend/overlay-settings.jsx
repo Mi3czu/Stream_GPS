@@ -8,7 +8,8 @@ const OPTIONS = {
   mapTheme: [['standard', 'Standard'], ['satellite', 'Satellite'], ['night', 'Night (OSM filter)']],
   textTheme: [['glass', 'Glass'], ['light', 'Light'], ['dark', 'Dark']],
   fontFamily: [['monospace', 'Standard (mono)'], ['Arial, sans-serif', 'Arial'], ['Roboto, sans-serif', 'Roboto'], ['Inter, sans-serif', 'Inter'], ['Oswald, sans-serif', 'Oswald']],
-  mapShape: [['round', 'Round'], ['square', 'Square']]
+  mapShape: [['round', 'Round'], ['square', 'Square']],
+  trailDurationMinutes: [[0, 'Off'], [1, 'Last 1 minute'], [5, 'Last 5 minutes'], [15, 'Last 15 minutes']]
 };
 
 const STAT_OPTIONS = [
@@ -98,6 +99,8 @@ const OverlaySettings = () => {
       </section>
       {choiceGroup('fontFamily', 'Font')}
       {choiceGroup('mapShape', 'Map shape')}
+      {choiceGroup('trailDurationMinutes', 'Fading route trail')}
+      <p className="overlay-settings__hint">The trail is visible only in this OBS overlay. Older fragments fade out and it never exposes the full private route history.</p>
       <section className="overlay-settings__section">
         <h2>Map size: {config.mapSize}px</h2>
         <input type="range" min="200" max="600" step="10" value={config.mapSize} onChange={(event) => update('mapSize', Number(event.target.value))} />
@@ -138,13 +141,16 @@ const OverlaySettings = () => {
         </label>
         <div className={`overlay-settings__preview overlay-settings__preview--${config.mapShape}`} style={{ '--preview-border': config.borderColor }}>
           <GpsMap
-            positions={[{ latitude: 52.2297, longitude: 21.0122, speed: previewSpeed, recorded_at: new Date().toISOString() }]}
+            positions={[{ latitude: 52.2286, longitude: 21.0085, recorded_at: new Date(Date.now() - 180000).toISOString() }, { latitude: 52.2291, longitude: 21.0102, recorded_at: new Date(Date.now() - 90000).toISOString() }, { latitude: 52.2297, longitude: 21.0122, speed: previewSpeed, recorded_at: new Date().toISOString() }]}
             mapTheme={config.mapTheme}
             size={240}
             zoomConfig={config}
             zoomControl={false}
             attributionControl={false}
             mapOpacity={config.mapOpacity}
+            fadingTrail={config.trailDurationMinutes > 0}
+            showHistoryMarkers={false}
+            followLatest
           />
           <small className="overlay-settings__attribution">{mapAttributionLabel(config.mapTheme)}</small>
         </div>

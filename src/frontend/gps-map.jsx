@@ -27,13 +27,13 @@ const zoomForSpeed = (speed, zoomConfig = {}) => {
   return Math.round(maxZoom - ((value - minSpeed) / (maxSpeed - minSpeed)) * (maxZoom - minZoom));
 };
 
-const MapViewport = ({ points, speed, zoomConfig }) => {
+const MapViewport = ({ points, speed, zoomConfig, followLatest = false }) => {
   const map = useMap();
 
   useEffect(() => {
-    if (points.length === 1) map.setView(points[0], zoomForSpeed(speed, zoomConfig));
-    if (points.length > 1) map.fitBounds(points, { padding: [32, 32], maxZoom: 15 });
-  }, [map, points, speed, zoomConfig]);
+    if (points.length === 1 || followLatest) map.setView(points[points.length - 1], zoomForSpeed(speed, zoomConfig));
+    else if (points.length > 1) map.fitBounds(points, { padding: [32, 32], maxZoom: 15 });
+  }, [followLatest, map, points, speed, zoomConfig]);
 
   return null;
 };
@@ -65,7 +65,7 @@ export const mapAttributionLabel = (mapTheme) => {
   return '© OpenStreetMap contributors';
 };
 
-const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, showHistoryMarkers = true, zoomControl = true, attributionControl = true, mapOpacity = 100 }) => {
+const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, showHistoryMarkers = true, fadingTrail = false, followLatest = false, zoomControl = true, attributionControl = true, mapOpacity = 100 }) => {
   const validPositions = positions.filter((position) => (
     Number.isFinite(Number(position.latitude)) && Number.isFinite(Number(position.longitude))
   ));
@@ -100,8 +100,12 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
           opacity={Math.max(0.1, Math.min(1, Number(mapOpacity) / 100))}
           url={tiles.url}
         />
-        <MapViewport points={points} speed={latestPosition?.speed} zoomConfig={zoomConfig} />
-        {connectPoints && routeSegments.map((segment, index) => segment.length > 1 && <Polyline key={`route-${index}`} positions={segment} pathOptions={{ color: '#0b6bcb', weight: 4 }} />)}
+        <MapViewport points={points} speed={latestPosition?.speed} zoomConfig={zoomConfig} followLatest={followLatest} />
+        {connectPoints && !fadingTrail && routeSegments.map((segment, index) => segment.length > 1 && <Polyline key={`route-${index}`} positions={segment} pathOptions={{ color: '#0b6bcb', weight: 4 }} />)}
+        {connectPoints && fadingTrail && routeSegments.flatMap((segment, segmentIndex) => segment.slice(1).map((point, pointIndex) => {
+          const progress = (pointIndex + 1) / Math.max(1, segment.length - 1);
+          return <Polyline key={`trail-${segmentIndex}-${pointIndex}`} positions={[segment[pointIndex], point]} pathOptions={{ color: '#53b1fd', weight: 5, opacity: 0.08 + progress * 0.82 }} />;
+        }))}
         {markerPositions.map((position, index) => {
           const point = [Number(position.latitude), Number(position.longitude)];
           const isLatest = position === latestPosition;

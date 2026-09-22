@@ -263,6 +263,7 @@ const DEFAULT_OVERLAY_CONFIG = {
   maxSpeed: 120,
   maxZoom: 16,
   minZoom: 10,
+  trailDurationMinutes: 0,
   stats: {
     speed: true,
     direction: true,
@@ -298,11 +299,13 @@ function validateOverlayConfig(input) {
   const maxZoom = Number(config.maxZoom);
   const minZoom = Number(config.minZoom);
   const mapOpacity = Number(config.mapOpacity);
+  const trailDurationMinutes = Number(config.trailDurationMinutes);
   if (!mapThemes.has(config.mapTheme) || !textThemes.has(config.textTheme) ||
       !fonts.has(config.fontFamily) || !['round', 'square'].includes(config.mapShape) ||
       !color.test(config.textColor) || !color.test(config.borderColor) ||
       !Number.isInteger(Number(config.mapSize)) || Number(config.mapSize) < 200 || Number(config.mapSize) > 600 ||
-      !Number.isInteger(mapOpacity) || mapOpacity < 10 || mapOpacity > 100) {
+      !Number.isInteger(mapOpacity) || mapOpacity < 10 || mapOpacity > 100 ||
+      ![0, 1, 5, 15].includes(trailDurationMinutes)) {
     return null;
   }
   if (typeof config.autoZoom !== 'boolean' || !Number.isInteger(minSpeed) || !Number.isInteger(maxSpeed) ||
@@ -312,7 +315,7 @@ function validateOverlayConfig(input) {
   if (!statNames.every((name) => typeof config.stats[name] === 'boolean') ||
       !['above-map', 'below-map'].includes(config.statsPosition) ||
       !Number.isInteger(Number(config.statsTextSize)) || Number(config.statsTextSize) < 10 || Number(config.statsTextSize) > 28) return null;
-  return { ...config, mapSize: Number(config.mapSize), mapOpacity, minSpeed, maxSpeed, minZoom, maxZoom, statsTextSize: Number(config.statsTextSize) };
+  return { ...config, mapSize: Number(config.mapSize), mapOpacity, minSpeed, maxSpeed, minZoom, maxZoom, trailDurationMinutes, statsTextSize: Number(config.statsTextSize) };
 }
 
 function writeSse(response, event, data) {
@@ -374,7 +377,7 @@ function escapeXml(value) {
 
 async function getOverlayForPublicAccess(overlayId, accessKey) {
   const result = await pool.query(
-    `SELECT o.id, o.access_key_hash, o.access_key_encrypted, o.config, o.visible, d.name, d.device_id, d.status, d.last_seen_at,
+    `SELECT o.id, o.access_key_hash, o.access_key_encrypted, o.config, o.visible, d.id AS device_db_id, d.name, d.device_id, d.status, d.last_seen_at,
             d.last_latitude, d.last_longitude, d.last_speed, d.last_heading, d.last_altitude,
             d.last_accuracy, d.last_satellites, d.last_recorded_at,
             session.distance_m AS trip_distance_m, session.max_speed AS max_session_speed,
@@ -1503,6 +1506,31 @@ app.get('/api/v1/overlays/:overlayId/data', async (req, res) => {
   } catch (error) {
     console.error('Overlay data error:', error.message);
     sendError(res, 500, 'OVERLAY_DATA_FAILED', 'Unable to load overlay data');
+  }
+});
+
+app.get('/api/v1/overlays/:overlayId/trail', async (req, res) => {
+  try {
+    const key = String(req.query.key || '');
+    if (!key) return sendError(res, 401, 'OVERLAY_KEY_REQUIRED', 'Overlay access key is required');
+    const overlay = await getOverlayForPublicAccess(req.params.overlayId, key);
+    if (!overlay) return sendError(res, 404, 'OVERLAY_NOT_FOUND', 'Overlay not found');
+    const durationMinutes = normalizeOverlayConfig(overlay.config).trailDurationMinutes;
+    if (!durationMinutes) return res.json({ positions: [] });
+    const result = await pool.query(
+      `SELECT latitude, longitude, speed, recorded_at
+       FROM gps_positions
+       WHERE device_id = $1 AND recorded_at >= NOW() - ($2 * INTERVAL '1 minute')
+       ORDER BY recorded_at DESC
+       LIMIT 2000`,
+      [overlay.device_db_id, durationMinutes]
+    );
+    const route = simplifyRoute(result.rows.reverse(), { maxPoints: 160 });
+    res.set('Cache-Control', 'no-store');
+    res.json({ positions: route.points });
+  } catch (error) {
+    console.error('Overlay trail error:', error.message);
+    sendError(res, 500, 'OVERLAY_TRAIL_FAILED', 'Unable to load overlay trail');
   }
 });
 
