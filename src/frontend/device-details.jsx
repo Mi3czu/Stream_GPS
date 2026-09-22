@@ -12,6 +12,11 @@ const distanceMeters = (a, b) => {
   return 6371000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 };
 
+const formatSpeed = (value) => {
+  const speed = Number(value);
+  return Number.isFinite(speed) ? speed.toFixed(1) : '—';
+};
+
 const CollapsiblePanel = ({ title, hint, badge, defaultOpen = false, className = '', children }) => (
   <details className={`panel collapsible-panel ${className}`.trim()} open={defaultOpen}>
     <summary className="collapsible-panel__summary">
@@ -28,6 +33,8 @@ const DeviceDetails = () => {
   const [device, setDevice] = useState(null);
   const [positions, setPositions] = useState([]);
   const [rangeHours, setRangeHours] = useState('24');
+  const [routeMode, setRouteMode] = useState(() => window.localStorage.getItem(`stream-gps-route-mode:${deviceId}`) || 'raw');
+  const [routeInfo, setRouteInfo] = useState(null);
   const [liveStatus, setLiveStatus] = useState('connecting');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -43,6 +50,7 @@ const DeviceDetails = () => {
   const loadDevice = useCallback(async () => {
     if (!token) { navigate('/login', { replace: true }); return; }
     const params = new URLSearchParams({ limit: '5000' });
+    if (routeMode === 'smart') { params.set('route', 'smart'); params.set('max_points', '2500'); }
     if (rangeHours !== 'all') params.set('from', new Date(Date.now() - Number(rangeHours) * 3600000).toISOString());
     try {
       const [deviceResponse, historyResponse, overlaysResponse, credentialsResponse, commandsResponse] = await Promise.all([
@@ -52,12 +60,12 @@ const DeviceDetails = () => {
         axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/credentials`, { headers }),
         axios.get(`/api/v1/devices/${encodeURIComponent(deviceId)}/chat-commands`, { headers })
       ]);
-      setDevice(deviceResponse.data.device); setPositions(historyResponse.data.positions); setOverlays(overlaysResponse.data.overlays); setCredentials(credentialsResponse.data); setChatCommands(commandsResponse.data.commands || []); setError(null);
+      setDevice(deviceResponse.data.device); setPositions(historyResponse.data.positions); setRouteInfo(historyResponse.data.route || null); setOverlays(overlaysResponse.data.overlays); setCredentials(credentialsResponse.data); setChatCommands(commandsResponse.data.commands || []); setError(null);
     } catch (requestError) {
       if (requestError.response?.status === 401) { sessionStorage.removeItem('accessToken'); navigate('/login', { replace: true }); return; }
       setError(requestError.response?.data?.message || requestError.message);
     } finally { setLoading(false); }
-  }, [deviceId, navigate, rangeHours, token]);
+  }, [deviceId, navigate, rangeHours, routeMode, token]);
 
   useEffect(() => { loadDevice(); }, [loadDevice]);
 
@@ -80,7 +88,7 @@ const DeviceDetails = () => {
             last_recorded_at: payload.recorded_at } : current);
           const next = { latitude: payload.latitude, longitude: payload.longitude, speed: payload.speed, heading: payload.heading,
             altitude: payload.altitude, accuracy: payload.accuracy, satellites: payload.satellites, recorded_at: payload.recorded_at };
-          setPositions((current) => [...current.filter((item) => item.recorded_at !== next.recorded_at), next].slice(-5000));
+          setPositions((current) => [...current.filter((item) => item.recorded_at !== next.recorded_at), next].slice(-(routeMode === 'smart' ? 2500 : 5000)));
         });
         source.onerror = () => setLiveStatus('reconnecting');
         renewal = window.setTimeout(() => { source?.close(); connect(); }, 240000);
@@ -88,7 +96,12 @@ const DeviceDetails = () => {
     };
     connect();
     return () => { cancelled = true; source?.close(); window.clearTimeout(renewal); };
-  }, [deviceId, token]);
+  }, [deviceId, routeMode, token]);
+
+  const changeRouteMode = (mode) => {
+    window.localStorage.setItem(`stream-gps-route-mode:${deviceId}`, mode);
+    setRouteMode(mode);
+  };
 
   const stats = useMemo(() => {
     const speeds = positions.map((p) => Number(p.speed)).filter(Number.isFinite);
@@ -212,12 +225,12 @@ const DeviceDetails = () => {
     {error && <div className="alert alert--error">{error}</div>}
     {device && <>
       <section className="stat-grid">
-        <article className="stat-card"><span className="stat-card__label">Current speed</span><span className="stat-card__value">{device.last_speed ?? '—'}<small> km/h</small></span></article>
+        <article className="stat-card"><span className="stat-card__label">Current speed</span><span className="stat-card__value">{formatSpeed(device.last_speed)}<small> km/h</small></span></article>
         <article className="stat-card"><span className="stat-card__label">Trip distance</span><span className="stat-card__value">{(stats.distance / 1000).toFixed(2)}<small> km</small></span></article>
         <article className="stat-card"><span className="stat-card__label">Average speed</span><span className="stat-card__value">{stats.avgSpeed?.toFixed(1) ?? '—'}<small> km/h</small></span></article>
         <article className="stat-card"><span className="stat-card__label">Maximum speed</span><span className="stat-card__value">{stats.maxSpeed?.toFixed(1) ?? '—'}<small> km/h</small></span></article>
       </section>
-      <CollapsiblePanel title="Live position and route" badge={`${positions.length} points`} defaultOpen><GpsMap positions={positions.length ? positions : (device.last_latitude === null ? [] : [{ latitude: device.last_latitude, longitude: device.last_longitude, speed: device.last_speed, recorded_at: device.last_recorded_at }])} /></CollapsiblePanel>
+      <CollapsiblePanel title="Live position and route" badge={routeInfo ? `${routeInfo.rendered_points} / ${routeInfo.source_points} points` : `${positions.length} points`} defaultOpen><div className="route-mode"><div><strong>Route rendering</strong><p className="panel__hint">Raw keeps the existing point-by-point view. Smart route preserves turns while reducing map load.</p></div><div className="route-mode__choices"><button type="button" className={routeMode === 'raw' ? '' : 'button--secondary'} onClick={() => changeRouteMode('raw')}>Raw / legacy</button><button type="button" className={routeMode === 'smart' ? '' : 'button--secondary'} onClick={() => changeRouteMode('smart')}>Smart route (beta)</button></div></div>{routeInfo && <p className="panel__hint route-mode__info">Showing {routeInfo.rendered_points} meaningful points from {routeInfo.source_points}{routeInfo.source_sampled ? ' (source sampled for a very long range)' : ''}. {routeInfo.segments > 1 ? `${routeInfo.segments} time-separated route segments are not joined.` : ''}</p>}<GpsMap positions={positions.length ? positions : (device.last_latitude === null ? [] : [{ latitude: device.last_latitude, longitude: device.last_longitude, speed: device.last_speed, recorded_at: device.last_recorded_at }])} showHistoryMarkers={routeMode === 'raw'} /></CollapsiblePanel>
       <CollapsiblePanel title="GPS details" hint="Latest position data received from this device."><div className="device-card__metrics">
         <span className="metric">Coordinates<strong>{device.last_latitude === null ? 'No GPS fix' : `${device.last_latitude}, ${device.last_longitude}`}</strong></span><span className="metric">Altitude<strong>{device.last_altitude ?? '—'} m</strong></span><span className="metric">Heading<strong>{device.last_heading ?? '—'}°</strong></span><span className="metric">Accuracy<strong>{device.last_accuracy ?? '—'} m</strong></span><span className="metric">Satellites<strong>{device.last_satellites ?? '—'}</strong></span><span className="metric">GPS time<strong>{device.last_recorded_at ? new Date(device.last_recorded_at).toLocaleString() : '—'}</strong></span>
       </div></CollapsiblePanel>

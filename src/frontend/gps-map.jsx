@@ -65,12 +65,18 @@ export const mapAttributionLabel = (mapTheme) => {
   return '© OpenStreetMap contributors';
 };
 
-const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, zoomControl = true, attributionControl = true, mapOpacity = 100 }) => {
+const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, showHistoryMarkers = true, zoomControl = true, attributionControl = true, mapOpacity = 100 }) => {
   const validPositions = positions.filter((position) => (
     Number.isFinite(Number(position.latitude)) && Number.isFinite(Number(position.longitude))
   ));
   const points = validPositions.map((position) => [Number(position.latitude), Number(position.longitude)]);
   const latestPosition = validPositions[validPositions.length - 1];
+  const routeSegments = validPositions.reduce((segments, position) => {
+    if (position.route_break_before || !segments.length) segments.push([]);
+    segments[segments.length - 1].push([Number(position.latitude), Number(position.longitude)]);
+    return segments;
+  }, []);
+  const markerPositions = showHistoryMarkers ? validPositions : (latestPosition ? [latestPosition] : []);
   // Legacy CARTO/Esri dark selections are retained in saved overlays, but use
   // the dependable Night rendering until a configured API-backed provider is
   // introduced.
@@ -95,9 +101,9 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
           url={tiles.url}
         />
         <MapViewport points={points} speed={latestPosition?.speed} zoomConfig={zoomConfig} />
-        {connectPoints && points.length > 1 && <Polyline positions={points} pathOptions={{ color: '#0b6bcb', weight: 4 }} />}
-        {points.map((point, index) => {
-          const position = validPositions[index];
+        {connectPoints && routeSegments.map((segment, index) => segment.length > 1 && <Polyline key={`route-${index}`} positions={segment} pathOptions={{ color: '#0b6bcb', weight: 4 }} />)}
+        {markerPositions.map((position, index) => {
+          const point = [Number(position.latitude), Number(position.longitude)];
           const isLatest = position === latestPosition;
           return (
             <CircleMarker

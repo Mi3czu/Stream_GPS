@@ -87,6 +87,9 @@ a { color: #1769d2; }
 .device-card__actions { border-top: 1px solid #edf1f6; justify-content: flex-start; padding-top: 14px; }
 .toolbar { display: flex; gap: 12px; margin-bottom: 18px; }
 .toolbar input { flex: 1; }
+.route-mode { align-items: center; display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; margin-bottom: 14px; }
+.route-mode__choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.route-mode__info { margin: -3px 0 14px; }
 input, select { background: white; border: 1px solid #cbd5e1; border-radius: 8px; color: #172033; min-height: 40px; padding: 8px 11px; }
 form { display: flex; flex-wrap: wrap; gap: 10px; }
 .empty-state { color: #64748b; padding: 28px; text-align: center; }
@@ -249,6 +252,7 @@ form { display: flex; flex-wrap: wrap; gap: 10px; }
   .settings-panel--wide { grid-column: auto; }
   .device-card__metrics { grid-template-columns: 1fr 1fr; }
   .toolbar, form { align-items: stretch; flex-direction: column; }
+  .route-mode { align-items: stretch; flex-direction: column; }
   .share-link { align-items: flex-start; flex-direction: column; }
   .key-field { align-items: stretch; flex-direction: column; }
   .command-grid { grid-template-columns: 1fr; }

@@ -8,6 +8,7 @@ const nodemailer = require('nodemailer');
 const { pool } = require('./database/postgres');
 const { authenticate } = require('./auth');
 const { authenticateDevice, invalidateDeviceAuth, sendError } = require('./device-auth');
+const { simplifyRoute } = require('./route-simplify');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -1172,18 +1173,54 @@ app.get('/api/v1/devices/:deviceId/location', authenticate, async (req, res) => 
 
 app.get('/api/v1/devices/:deviceId/history', authenticate, async (req, res) => {
   try {
+    const smartRoute = req.query.route === 'smart';
     const limit = Math.min(Math.max(Number(req.query.limit) || 1000, 1), 5000);
+    const maxPoints = Math.min(Math.max(Number(req.query.max_points) || 2500, 200), 5000);
+    const filters = [req.params.deviceId, req.user.sub, req.query.from || null, req.query.to || null];
+    const baseQuery = `
+      FROM gps_positions p
+      JOIN devices d ON d.id = p.device_id
+      WHERE d.device_id = $1 AND d.owner_id = $2
+        AND ($3::timestamptz IS NULL OR p.recorded_at >= $3)
+        AND ($4::timestamptz IS NULL OR p.recorded_at <= $4)`;
+    if (smartRoute) {
+      const countResult = await pool.query(`SELECT COUNT(*)::int AS count ${baseQuery}`, filters);
+      const sourcePointCount = countResult.rows[0].count;
+      // Keep the complete time span even for very long histories. RDP then selects
+      // the visually meaningful points from this bounded source set.
+      const sourceCap = 50000;
+      const stride = Math.max(1, Math.ceil(sourcePointCount / sourceCap));
+      const result = await pool.query(
+        `WITH numbered AS (
+           SELECT p.latitude, p.longitude, p.altitude, p.speed, p.heading, p.accuracy,
+                  p.satellites, p.recorded_at, p.received_at,
+                  row_number() OVER (ORDER BY p.recorded_at ASC) AS row_number
+           ${baseQuery}
+         )
+         SELECT latitude, longitude, altitude, speed, heading, accuracy, satellites, recorded_at, received_at
+         FROM numbered
+         WHERE ((row_number - 1) % $5 = 0) OR row_number = $6
+         ORDER BY recorded_at ASC`,
+        [...filters, stride, sourcePointCount]
+      );
+      const route = simplifyRoute(result.rows, { maxPoints });
+      res.json({
+        positions: route.points,
+        route: {
+          mode: 'smart', source_points: sourcePointCount, rendered_points: route.renderedPoints,
+          segments: route.segments, tolerance_meters: route.toleranceMeters,
+          source_sampled: stride > 1
+        }
+      });
+      return;
+    }
     const result = await pool.query(
       `SELECT p.latitude, p.longitude, p.altitude, p.speed, p.heading, p.accuracy,
               p.satellites, p.recorded_at, p.received_at
-       FROM gps_positions p
-       JOIN devices d ON d.id = p.device_id
-       WHERE d.device_id = $1 AND d.owner_id = $2
-         AND ($3::timestamptz IS NULL OR p.recorded_at >= $3)
-         AND ($4::timestamptz IS NULL OR p.recorded_at <= $4)
+       ${baseQuery}
        ORDER BY p.recorded_at ASC
        LIMIT $5`,
-      [req.params.deviceId, req.user.sub, req.query.from || null, req.query.to || null, limit]
+      [...filters, limit]
     );
     res.json({ positions: result.rows });
   } catch (error) {
