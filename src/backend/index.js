@@ -546,7 +546,7 @@ app.get('/api/v1/chat/integrations/:platform/users/:username', authenticate, asy
     const result = await pool.query('SELECT * FROM chat_integrations WHERE owner_id = $1 AND platform = $2 AND enabled = TRUE', [req.user.sub, platform]);
     const integration = result.rows[0];
     if (!integration) return sendError(res, 409, 'CHAT_NOT_CONNECTED', `Connect ${platform} before looking up users`);
-    const token = decryptSecret(integration.access_token_encrypted);
+    const token = platform === 'twitch' ? await twitchAccessToken(integration) : await kickAccessToken(integration);
     const endpoint = platform === 'twitch'
       ? `https://api.twitch.tv/helix/users?login=${encodeURIComponent(username)}`
       : `https://api.kick.com/public/v1/channels?slug=${encodeURIComponent(username)}`;
@@ -554,6 +554,8 @@ app.get('/api/v1/chat/integrations/:platform/users/:username', authenticate, asy
       ? { Authorization: `Bearer ${token}`, 'Client-Id': process.env.TWITCH_CLIENT_ID }
       : { Authorization: `Bearer ${token}` };
     const lookup = await fetch(endpoint, { headers });
+    if (lookup.status === 401 || lookup.status === 403) return sendError(res, 409, 'CHAT_USER_LOOKUP_RECONNECT', `Reconnect ${platform} to grant the permissions required for nickname lookup`);
+    if (lookup.status === 404) return sendError(res, 404, 'CHAT_USER_NOT_FOUND', 'No account or channel was found for that nickname');
     if (!lookup.ok) throw new Error(`${platform} user lookup returned ${lookup.status}`);
     const item = (await lookup.json()).data?.[0];
     const user = platform === 'twitch'
