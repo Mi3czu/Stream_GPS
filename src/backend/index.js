@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const WebSocket = require('ws');
 const { pool } = require('./database/postgres');
 const { authenticate } = require('./auth');
 const { authenticateDevice, invalidateDeviceAuth, sendError } = require('./device-auth');
@@ -120,6 +121,181 @@ const CHAT_COMMAND_DEFAULTS = [
 const CHAT_COMMAND_ACTIONS = new Set(CHAT_COMMAND_DEFAULTS.map((rule) => rule.action));
 const CHAT_ROLES = new Set(['viewer', 'moderator', 'admin', 'owner']);
 const CHAT_COMMAND_PATTERN = /^![a-z0-9_-]{1,24}$/i;
+const ACTIVE_CHAT_DEVICE_WINDOW_SECONDS = 30;
+const twitchSockets = new Map();
+const twitchCooldowns = new Map();
+
+const chatRoleRank = { viewer: 0, moderator: 1, admin: 2, owner: 3 };
+
+function closeTwitchSocket(integrationId) {
+  const connection = twitchSockets.get(String(integrationId));
+  if (!connection) return;
+  connection.closedByUs = true;
+  connection.socket.close();
+  twitchSockets.delete(String(integrationId));
+}
+
+async function twitchAccessToken(integration) {
+  if (integration.token_expires_at && new Date(integration.token_expires_at).getTime() > Date.now() + 60_000) return decryptSecret(integration.access_token_encrypted);
+  const refreshToken = decryptSecret(integration.refresh_token_encrypted);
+  if (!refreshToken) throw new Error('Twitch refresh token is unavailable');
+  const body = new URLSearchParams({ client_id: process.env.TWITCH_CLIENT_ID, client_secret: process.env.TWITCH_CLIENT_SECRET, grant_type: 'refresh_token', refresh_token: refreshToken });
+  const response = await fetch('https://id.twitch.tv/oauth2/token', { method: 'POST', body });
+  if (!response.ok) throw new Error(`Twitch token refresh returned ${response.status}`);
+  const tokens = await response.json();
+  await pool.query(
+    `UPDATE chat_integrations SET access_token_encrypted = $2, refresh_token_encrypted = $3,
+       token_expires_at = NOW() + ($4 * INTERVAL '1 second'), updated_at = NOW() WHERE id = $1`,
+    [integration.id, encryptSecret(tokens.access_token), encryptSecret(tokens.refresh_token), Number(tokens.expires_in || 0)]
+  );
+  integration.access_token_encrypted = encryptSecret(tokens.access_token);
+  integration.refresh_token_encrypted = encryptSecret(tokens.refresh_token);
+  integration.token_expires_at = new Date(Date.now() + Number(tokens.expires_in || 0) * 1000);
+  return tokens.access_token;
+}
+
+async function sendTwitchMessage(integration, text) {
+  const token = await twitchAccessToken(integration);
+  if (!token || !text) return;
+  const response = await fetch('https://api.twitch.tv/helix/chat/messages', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Client-Id': process.env.TWITCH_CLIENT_ID, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ broadcaster_id: integration.channel_id, sender_id: integration.channel_id, message: String(text).slice(0, 450) })
+  });
+  if (!response.ok) throw new Error(`Twitch chat reply returned ${response.status}`);
+}
+
+async function findActiveChatDevice(ownerId) {
+  const result = await pool.query(
+    `SELECT id, device_id, name, last_speed, last_seen_at, public_share_id, public_share_enabled
+     FROM devices
+     WHERE owner_id = $1 AND status = 'active' AND last_seen_at >= NOW() - ($2 * INTERVAL '1 second')
+     ORDER BY last_seen_at DESC LIMIT 2`,
+    [ownerId, ACTIVE_CHAT_DEVICE_WINDOW_SECONDS]
+  );
+  return result.rows;
+}
+
+async function chatUserRole(integration, event) {
+  if (String(event.chatter_user_id) === String(integration.channel_id) || event.chatter_is_broadcaster) return 'owner';
+  const admin = await pool.query('SELECT 1 FROM chat_authorized_users WHERE integration_id = $1 AND platform_user_id = $2', [integration.id, String(event.chatter_user_id)]);
+  if (admin.rows[0]) return 'admin';
+  return event.chatter_is_moderator ? 'moderator' : 'viewer';
+}
+
+async function setChatSharing(device, enabled) {
+  const result = await pool.query(
+    `UPDATE devices SET public_share_enabled = $2,
+       public_share_id = CASE WHEN $2 AND public_share_id IS NULL THEN gen_random_uuid() ELSE public_share_id END,
+       public_share_updated_at = NOW(), updated_at = NOW()
+     WHERE id = $1 RETURNING public_share_id, public_share_enabled`,
+    [device.id, enabled]
+  );
+  const sharing = result.rows[0];
+  if (enabled) publicMapCache.delete(String(sharing.public_share_id));
+  else disablePublicMapShare(sharing.public_share_id);
+  return sharing;
+}
+
+async function setChatOverlayVisibility(deviceId, visible) {
+  const result = await pool.query(
+    `UPDATE overlays SET visible = $2, updated_at = NOW()
+     WHERE device_id = $1 AND status = 'active' RETURNING id`,
+    [deviceId, visible]
+  );
+  for (const overlay of result.rows) publishOverlayEvent(overlay.id, 'visibility', { visible });
+}
+
+async function executeTwitchCommand(integration, device, rule) {
+  if (rule.action === 'map') {
+    if (!device.public_share_enabled || !device.public_share_id) return 'Live map sharing is currently off.';
+    return `Live map: ${publicBaseUrl()}/map/${device.public_share_id}`;
+  }
+  if (rule.action === 'gps_status') return `${device.name}: ${device.last_speed == null ? 'GPS connected' : `${Number(device.last_speed).toFixed(1)} km/h`}.`;
+  if (rule.action === 'private_mode') { await setChatSharing(device, false); return 'Viewer location sharing is now off.'; }
+  if (rule.action === 'live_mode') { const sharing = await setChatSharing(device, true); return `Viewer location sharing is on: ${publicBaseUrl()}/map/${sharing.public_share_id}`; }
+  if (rule.action === 'hide_overlay') { await setChatOverlayVisibility(device.id, false); return 'GPS overlay hidden.'; }
+  if (rule.action === 'show_overlay') { await setChatOverlayVisibility(device.id, true); return 'GPS overlay shown.'; }
+  if (rule.action === 'panic') { await setChatSharing(device, false); await setChatOverlayVisibility(device.id, false); return 'Privacy stop completed: map sharing off and GPS overlay hidden.'; }
+  return null;
+}
+
+async function handleTwitchChatMessage(integration, event) {
+  const text = String(event.message?.text || '').trim().toLowerCase();
+  const command = text.split(/\s+/, 1)[0];
+  if (!CHAT_COMMAND_PATTERN.test(command)) return;
+  const inserted = await pool.query(
+    `INSERT INTO chat_command_events (integration_id, platform_event_id, platform_user_id, command, outcome)
+     VALUES ($1, $2, $3, $4, 'received') ON CONFLICT (integration_id, platform_event_id) DO NOTHING RETURNING id`,
+    [integration.id, event.message_id, event.chatter_user_id, command]
+  );
+  if (!inserted.rows[0]) return;
+  const eventId = inserted.rows[0].id;
+  try {
+    const activeDevices = await findActiveChatDevice(integration.owner_id);
+    if (activeDevices.length !== 1) {
+      const reply = activeDevices.length ? 'More than one GPS device is active; command was not applied.' : 'No active GPS device is currently sending positions.';
+      await pool.query("UPDATE chat_command_events SET outcome = 'inactive_device' WHERE id = $1", [eventId]);
+      await sendTwitchMessage(integration, reply);
+      return;
+    }
+    const device = activeDevices[0];
+    await ensureDeviceChatRules(device.id);
+    const rules = await pool.query('SELECT * FROM device_chat_command_rules WHERE device_id = $1 AND enabled = TRUE', [device.id]);
+    const rule = rules.rows.find((candidate) => [candidate.command, ...(candidate.aliases || [])].map((item) => String(item).toLowerCase()).includes(command));
+    if (!rule) { await pool.query("UPDATE chat_command_events SET outcome = 'ignored' WHERE id = $1", [eventId]); return; }
+    const role = await chatUserRole(integration, event);
+    if (chatRoleRank[role] < chatRoleRank[rule.minimum_role]) { await pool.query("UPDATE chat_command_events SET outcome = 'unauthorized' WHERE id = $1", [eventId]); return; }
+    const cooldownKey = `${integration.id}:${device.id}:${rule.action}`;
+    if ((twitchCooldowns.get(cooldownKey) || 0) > Date.now()) { await pool.query("UPDATE chat_command_events SET outcome = 'cooldown' WHERE id = $1", [eventId]); return; }
+    const reply = await executeTwitchCommand(integration, device, rule);
+    twitchCooldowns.set(cooldownKey, Date.now() + Number(rule.cooldown_seconds || 0) * 1000);
+    await pool.query("UPDATE chat_command_events SET outcome = 'completed', metadata = $2::jsonb WHERE id = $1", [eventId, JSON.stringify({ action: rule.action, device_id: device.device_id, role })]);
+    await recordAudit({ user: { sub: integration.owner_id }, ip: null }, 'chat.command.executed', 'device', device.device_id, { platform: 'twitch', action: rule.action, role });
+    if (rule.response_enabled) await sendTwitchMessage(integration, reply);
+  } catch (error) {
+    console.error('Twitch chat command error:', error.message);
+    await pool.query("UPDATE chat_command_events SET outcome = 'failed' WHERE id = $1", [eventId]);
+  }
+}
+
+async function createTwitchSubscription(integration, sessionId) {
+  const token = await twitchAccessToken(integration);
+  const response = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Client-Id': process.env.TWITCH_CLIENT_ID, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'channel.chat.message', version: '1', condition: { broadcaster_user_id: integration.channel_id, user_id: integration.channel_id }, transport: { method: 'websocket', session_id: sessionId } })
+  });
+  if (!response.ok) throw new Error(`Twitch EventSub subscription returned ${response.status}`);
+}
+
+async function startTwitchChatIntegration(integration, socketUrl = 'wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=30') {
+  closeTwitchSocket(integration.id);
+  const token = await twitchAccessToken(integration);
+  if (!token || !integration.enabled) return;
+  const connection = { socket: new WebSocket(socketUrl), closedByUs: false };
+  twitchSockets.set(String(integration.id), connection);
+  connection.socket.on('message', async (raw) => {
+    try {
+      const message = JSON.parse(raw.toString());
+      if (message.metadata?.message_type === 'session_welcome') await createTwitchSubscription(integration, message.payload.session.id);
+      if (message.metadata?.message_type === 'notification' && message.metadata.subscription_type === 'channel.chat.message') await handleTwitchChatMessage(integration, message.payload.event);
+      if (message.metadata?.message_type === 'session_reconnect' && message.payload.session.reconnect_url) {
+        connection.closedByUs = true;
+        startTwitchChatIntegration(integration, message.payload.session.reconnect_url).catch((error) => console.error('Twitch EventSub reconnect error:', error.message));
+      }
+    } catch (error) { console.error('Twitch EventSub message error:', error.message); connection.socket.close(); }
+  });
+  connection.socket.on('close', () => {
+    if (!connection.closedByUs && twitchSockets.get(String(integration.id)) === connection) setTimeout(() => startTwitchChatIntegration(integration).catch((error) => console.error('Twitch EventSub retry error:', error.message)), 5_000).unref();
+  });
+  connection.socket.on('error', (error) => console.error('Twitch EventSub socket error:', error.message));
+}
+
+async function startTwitchChatIntegrations() {
+  const result = await pool.query("SELECT * FROM chat_integrations WHERE platform = 'twitch' AND enabled = TRUE");
+  for (const integration of result.rows) startTwitchChatIntegration(integration).catch((error) => console.error('Twitch chat connection error:', error.message));
+}
 
 async function ensureDeviceChatRules(deviceId) {
   for (const rule of CHAT_COMMAND_DEFAULTS) {
@@ -198,6 +374,8 @@ app.get('/api/v1/chat/twitch/callback', async (req, res) => {
        ON CONFLICT (owner_id, platform) DO UPDATE SET enabled = TRUE, channel_id = EXCLUDED.channel_id, channel_name = EXCLUDED.channel_name, access_token_encrypted = EXCLUDED.access_token_encrypted, refresh_token_encrypted = EXCLUDED.refresh_token_encrypted, token_expires_at = EXCLUDED.token_expires_at, settings = chat_integrations.settings || EXCLUDED.settings, updated_at = NOW()`,
       [state.sub, user.id, user.login, encryptSecret(tokens.access_token), encryptSecret(tokens.refresh_token), Number(tokens.expires_in || 0), JSON.stringify({ oauth_scopes: tokens.scope || [] })]
     );
+    const integration = await pool.query("SELECT * FROM chat_integrations WHERE owner_id = $1 AND platform = 'twitch'", [state.sub]);
+    startTwitchChatIntegration(integration.rows[0]).catch((error) => console.error('Twitch chat connection error:', error.message));
     await recordAudit({ user: { sub: state.sub }, ip: req.ip }, 'chat.twitch.connected', 'chat_integration', 'twitch', { channel_id: user.id });
     res.redirect(`${accountUrl}?chat=twitch-connected`);
   } catch (error) {
@@ -257,7 +435,8 @@ app.delete('/api/v1/chat/integrations/:platform', authenticate, async (req, res)
   const platform = String(req.params.platform || '').toLowerCase();
   if (!['kick', 'twitch'].includes(platform)) return sendError(res, 404, 'CHAT_PLATFORM_UNKNOWN', 'Unknown chat platform');
   try {
-    await pool.query('DELETE FROM chat_integrations WHERE owner_id = $1 AND platform = $2', [req.user.sub, platform]);
+    const removed = await pool.query('DELETE FROM chat_integrations WHERE owner_id = $1 AND platform = $2 RETURNING id', [req.user.sub, platform]);
+    if (platform === 'twitch' && removed.rows[0]) closeTwitchSocket(removed.rows[0].id);
     await recordAudit(req, 'chat.integration.disconnected', 'chat_integration', platform);
     res.json({ message: `${platform} integration disconnected` });
   } catch (error) {
@@ -1776,4 +1955,5 @@ app.post('/api/v1/gps/update', authenticateDevice, async (req, res) => {
 
 app.listen(port, () => {
   console.log(`Backend running at http://localhost:${port}`);
+  startTwitchChatIntegrations().catch((error) => console.error('Twitch chat startup error:', error.message));
 });
