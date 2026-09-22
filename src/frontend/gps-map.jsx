@@ -61,7 +61,7 @@ const stabilizeStationaryDrift = (positions) => {
   return positions.map((position) => {
     const point = [Number(position.latitude), Number(position.longitude)];
     const speed = Number(position.speed);
-    const isVerySlow = Number.isFinite(speed) && speed < 1.2;
+    const isVerySlow = Number.isFinite(speed) && speed < 1.4;
     if (!anchor || !isVerySlow) {
       anchor = point;
       stationarySamples = 0;
