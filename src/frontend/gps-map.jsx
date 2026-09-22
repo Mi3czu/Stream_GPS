@@ -12,6 +12,49 @@ import './gps-map.css';
 
 const DEFAULT_CENTER = [52.2297, 21.0122];
 
+const distanceMeters = (first, second) => {
+  const latitudeScale = 111320;
+  const longitudeScale = latitudeScale * Math.cos(((first[0] + second[0]) / 2) * Math.PI / 180);
+  return Math.hypot((second[0] - first[0]) * latitudeScale, (second[1] - first[1]) * longitudeScale);
+};
+
+const interpolate = (first, second, fraction) => [
+  first[0] + (second[0] - first[0]) * fraction,
+  first[1] + (second[1] - first[1]) * fraction
+];
+
+const roundedSegment = (segment) => {
+  if (segment.length < 3) return segment;
+  const rounded = [segment[0]];
+  for (let index = 1; index < segment.length - 1; index += 1) {
+    const previous = segment[index - 1];
+    const corner = segment[index];
+    const next = segment[index + 1];
+    const incomingLength = distanceMeters(previous, corner);
+    const outgoingLength = distanceMeters(corner, next);
+    const longitudeScale = 111320 * Math.cos(corner[0] * Math.PI / 180);
+    const incoming = [(corner[0] - previous[0]) * 111320 / incomingLength, (corner[1] - previous[1]) * longitudeScale / incomingLength];
+    const outgoing = [(next[0] - corner[0]) * 111320 / outgoingLength, (next[1] - corner[1]) * longitudeScale / outgoingLength];
+    const turnDegrees = Math.acos(Math.max(-1, Math.min(1, incoming[0] * outgoing[0] + incoming[1] * outgoing[1]))) * 180 / Math.PI;
+    const radius = Math.min(1.5, incomingLength * 0.25, outgoingLength * 0.25);
+    if (!Number.isFinite(turnDegrees) || turnDegrees < 30 || turnDegrees > 150 || radius < 0.35) {
+      rounded.push(corner);
+      continue;
+    }
+    const entry = interpolate(corner, previous, radius / incomingLength);
+    const exit = interpolate(corner, next, radius / outgoingLength);
+    rounded.push(entry);
+    for (const fraction of [0.25, 0.5, 0.75]) {
+      const first = interpolate(entry, corner, fraction);
+      const second = interpolate(corner, exit, fraction);
+      rounded.push(interpolate(first, second, fraction));
+    }
+    rounded.push(exit);
+  }
+  rounded.push(segment[segment.length - 1]);
+  return rounded;
+};
+
 const zoomForSpeed = (speed, zoomConfig = {}) => {
   const {
     autoZoom = true,
@@ -65,7 +108,7 @@ export const mapAttributionLabel = (mapTheme) => {
   return '© OpenStreetMap contributors';
 };
 
-const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, showHistoryMarkers = true, fadingTrail = false, followLatest = false, zoomControl = true, attributionControl = true, mapOpacity = 100 }) => {
+const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, showHistoryMarkers = true, fadingTrail = false, roundedCorners = false, followLatest = false, zoomControl = true, attributionControl = true, mapOpacity = 100 }) => {
   const validPositions = positions.filter((position) => (
     Number.isFinite(Number(position.latitude)) && Number.isFinite(Number(position.longitude))
   ));
@@ -77,6 +120,7 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
     return segments;
   }, []);
   const markerPositions = showHistoryMarkers ? validPositions : (latestPosition ? [latestPosition] : []);
+  const renderedRouteSegments = roundedCorners ? routeSegments.map(roundedSegment) : routeSegments;
   // Legacy CARTO/Esri dark selections are retained in saved overlays, but use
   // the dependable Night rendering until a configured API-backed provider is
   // introduced.
@@ -101,7 +145,7 @@ const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, conne
           url={tiles.url}
         />
         <MapViewport points={points} speed={latestPosition?.speed} zoomConfig={zoomConfig} followLatest={followLatest} />
-        {connectPoints && !fadingTrail && routeSegments.map((segment, index) => segment.length > 1 && <Polyline key={`route-${index}`} positions={segment} pathOptions={{ color: '#0b6bcb', weight: 4, lineCap: 'round', lineJoin: 'round' }} />)}
+        {connectPoints && !fadingTrail && renderedRouteSegments.map((segment, index) => segment.length > 1 && <Polyline key={`route-${index}`} positions={segment} pathOptions={{ color: '#0b6bcb', weight: 4, lineCap: 'round', lineJoin: 'round' }} />)}
         {connectPoints && fadingTrail && routeSegments.flatMap((segment, segmentIndex) => segment.slice(1).map((point, pointIndex) => {
           const progress = (pointIndex + 1) / Math.max(1, segment.length - 1);
           return <Polyline key={`trail-${segmentIndex}-${pointIndex}`} positions={[segment[pointIndex], point]} pathOptions={{ color: '#53b1fd', weight: 5, opacity: 0.08 + progress * 0.82, lineCap: 'round', lineJoin: 'round' }} />;
