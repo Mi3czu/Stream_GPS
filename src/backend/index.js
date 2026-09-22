@@ -98,6 +98,16 @@ function chatConfiguration(platform) {
   };
 }
 
+const publicBaseUrl = () => String(process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+const twitchRedirectUri = () => `${publicBaseUrl()}/api/v1/chat/twitch/callback`;
+
+async function exchangeTwitchCode(code) {
+  const body = new URLSearchParams({ client_id: process.env.TWITCH_CLIENT_ID, client_secret: process.env.TWITCH_CLIENT_SECRET, code, grant_type: 'authorization_code', redirect_uri: twitchRedirectUri() });
+  const response = await fetch('https://id.twitch.tv/oauth2/token', { method: 'POST', body });
+  if (!response.ok) throw new Error(`Twitch token exchange returned ${response.status}`);
+  return response.json();
+}
+
 const CHAT_COMMAND_DEFAULTS = [
   { action: 'map', label: 'Share viewer map', command: '!map', aliases: ['!mapa'], minimum_role: 'viewer', cooldown_seconds: 30, response_enabled: true },
   { action: 'gps_status', label: 'Show GPS status', command: '!gps', aliases: [], minimum_role: 'viewer', cooldown_seconds: 15, response_enabled: true },
@@ -160,6 +170,39 @@ app.get('/api/v1/chat/integrations', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Chat integrations read error:', error.message);
     sendError(res, 500, 'CHAT_INTEGRATIONS_READ_FAILED', 'Unable to load chat integrations');
+  }
+});
+
+app.post('/api/v1/chat/twitch/connect', authenticate, (req, res) => {
+  if (!chatConfiguration('twitch').configured) return sendError(res, 503, 'TWITCH_NOT_CONFIGURED', 'Twitch OAuth is not configured on this server');
+  const state = jwt.sign({ type: 'twitch-oauth-state', sub: req.user.sub, nonce: crypto.randomUUID() }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '10m' });
+  const authorizationUrl = new URL('https://id.twitch.tv/oauth2/authorize');
+  authorizationUrl.search = new URLSearchParams({ client_id: process.env.TWITCH_CLIENT_ID, redirect_uri: twitchRedirectUri(), response_type: 'code', scope: 'user:read:chat user:write:chat', state }).toString();
+  res.json({ authorization_url: authorizationUrl.toString() });
+});
+
+app.get('/api/v1/chat/twitch/callback', async (req, res) => {
+  const accountUrl = `${publicBaseUrl()}/account`;
+  try {
+    if (!chatConfiguration('twitch').configured || typeof req.query.code !== 'string' || typeof req.query.state !== 'string') throw new Error('Missing OAuth response');
+    const state = jwt.verify(req.query.state, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    if (state.type !== 'twitch-oauth-state' || !state.sub) throw new Error('Invalid OAuth state');
+    const tokens = await exchangeTwitchCode(req.query.code);
+    const profileResponse = await fetch('https://api.twitch.tv/helix/users', { headers: { Authorization: `Bearer ${tokens.access_token}`, 'Client-Id': process.env.TWITCH_CLIENT_ID } });
+    if (!profileResponse.ok) throw new Error(`Twitch profile request returned ${profileResponse.status}`);
+    const user = (await profileResponse.json()).data?.[0];
+    if (!user?.id || !user.login) throw new Error('Twitch user profile unavailable');
+    await pool.query(
+      `INSERT INTO chat_integrations (owner_id, platform, enabled, channel_id, channel_name, access_token_encrypted, refresh_token_encrypted, token_expires_at, settings)
+       VALUES ($1, 'twitch', TRUE, $2, $3, $4, $5, NOW() + ($6 * INTERVAL '1 second'), $7::jsonb)
+       ON CONFLICT (owner_id, platform) DO UPDATE SET enabled = TRUE, channel_id = EXCLUDED.channel_id, channel_name = EXCLUDED.channel_name, access_token_encrypted = EXCLUDED.access_token_encrypted, refresh_token_encrypted = EXCLUDED.refresh_token_encrypted, token_expires_at = EXCLUDED.token_expires_at, settings = chat_integrations.settings || EXCLUDED.settings, updated_at = NOW()`,
+      [state.sub, user.id, user.login, encryptSecret(tokens.access_token), encryptSecret(tokens.refresh_token), Number(tokens.expires_in || 0), JSON.stringify({ oauth_scopes: tokens.scope || [] })]
+    );
+    await recordAudit({ user: { sub: state.sub }, ip: req.ip }, 'chat.twitch.connected', 'chat_integration', 'twitch', { channel_id: user.id });
+    res.redirect(`${accountUrl}?chat=twitch-connected`);
+  } catch (error) {
+    console.error('Twitch OAuth callback error:', error.message);
+    res.redirect(`${accountUrl}?chat=twitch-error`);
   }
 });
 
