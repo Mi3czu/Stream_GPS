@@ -193,9 +193,9 @@ async function findActiveChatDevice(ownerId) {
 
 async function chatUserRole(integration, event) {
   if (String(event.chatter_user_id) === String(integration.channel_id) || event.chatter_is_broadcaster) return 'owner';
-  const admin = await pool.query('SELECT 1 FROM chat_authorized_users WHERE integration_id = $1 AND platform_user_id = $2', [integration.id, String(event.chatter_user_id)]);
-  if (admin.rows[0]) return 'admin';
-  return event.chatter_is_moderator ? 'moderator' : 'viewer';
+  const saved = await pool.query('SELECT role FROM chat_authorized_users WHERE integration_id = $1 AND platform_user_id = $2', [integration.id, String(event.chatter_user_id)]);
+  const nativeRole = event.chatter_is_moderator ? 'moderator' : 'viewer';
+  return saved.rows[0] && chatRoleRank[saved.rows[0].role] > chatRoleRank[nativeRole] ? saved.rows[0].role : nativeRole;
 }
 
 async function setChatSharing(device, enabled) {
@@ -378,7 +378,7 @@ app.post('/api/v1/chat/kick/connect', authenticate, (req, res) => {
   const pkce = kickPkcePair();
   kickOAuthStates.set(state, { ownerId: req.user.sub, verifier: pkce.verifier, expiresAt: Date.now() + 10 * 60_000 });
   const authorizationUrl = new URL('https://id.kick.com/oauth/authorize');
-  authorizationUrl.search = new URLSearchParams({ client_id: process.env.KICK_CLIENT_ID, redirect_uri: kickRedirectUri(), response_type: 'code', scope: 'user:read chat:write events:subscribe', state, code_challenge: pkce.challenge, code_challenge_method: 'S256' }).toString();
+  authorizationUrl.search = new URLSearchParams({ client_id: process.env.KICK_CLIENT_ID, redirect_uri: kickRedirectUri(), response_type: 'code', scope: 'user:read channel:read chat:write events:subscribe', state, code_challenge: pkce.challenge, code_challenge_method: 'S256' }).toString();
   res.json({ authorization_url: authorizationUrl.toString() });
 });
 
@@ -434,12 +434,42 @@ app.get('/api/v1/chat/kick/callback', async (req, res) => {
   }
 });
 
+app.get('/api/v1/chat/integrations/:platform/users/:username', authenticate, async (req, res) => {
+  const platform = String(req.params.platform || '').toLowerCase();
+  const username = String(req.params.username || '').trim().toLowerCase();
+  if (!['kick', 'twitch'].includes(platform) || !/^[a-z0-9_-]{1,25}$/.test(username)) return sendError(res, 400, 'CHAT_USER_LOOKUP_INVALID', 'Enter a valid platform nickname');
+  try {
+    const result = await pool.query('SELECT * FROM chat_integrations WHERE owner_id = $1 AND platform = $2 AND enabled = TRUE', [req.user.sub, platform]);
+    const integration = result.rows[0];
+    if (!integration) return sendError(res, 409, 'CHAT_NOT_CONNECTED', `Connect ${platform} before looking up users`);
+    const token = decryptSecret(integration.access_token_encrypted);
+    const endpoint = platform === 'twitch'
+      ? `https://api.twitch.tv/helix/users?login=${encodeURIComponent(username)}`
+      : `https://api.kick.com/public/v1/channels?slug=${encodeURIComponent(username)}`;
+    const headers = platform === 'twitch'
+      ? { Authorization: `Bearer ${token}`, 'Client-Id': process.env.TWITCH_CLIENT_ID }
+      : { Authorization: `Bearer ${token}` };
+    const lookup = await fetch(endpoint, { headers });
+    if (!lookup.ok) throw new Error(`${platform} user lookup returned ${lookup.status}`);
+    const item = (await lookup.json()).data?.[0];
+    const user = platform === 'twitch'
+      ? item && { id: String(item.id), username: item.login || item.display_name }
+      : item && { id: String(item.broadcaster_user_id), username: item.slug || username };
+    if (!user?.id || !user.username) return sendError(res, 404, 'CHAT_USER_NOT_FOUND', 'No account or channel was found for that nickname');
+    res.json({ user });
+  } catch (error) {
+    console.error('Chat user lookup error:', error.message);
+    sendError(res, 502, 'CHAT_USER_LOOKUP_FAILED', 'Unable to look up that platform user');
+  }
+});
+
 app.post('/api/v1/chat/integrations/:platform/admins', authenticate, async (req, res) => {
   const platform = String(req.params.platform || '').toLowerCase();
   const platformUserId = String(req.body.platform_user_id || '').trim();
   const username = String(req.body.username || '').trim();
+  const role = String(req.body.role || 'admin');
   if (!['kick', 'twitch'].includes(platform)) return sendError(res, 404, 'CHAT_PLATFORM_UNKNOWN', 'Unknown chat platform');
-  if (!/^[A-Za-z0-9_-]{1,100}$/.test(platformUserId) || (username && username.length > 100)) {
+  if (!/^[A-Za-z0-9_-]{1,100}$/.test(platformUserId) || (username && username.length > 100) || !['admin', 'moderator'].includes(role)) {
     return sendError(res, 400, 'CHAT_ADMIN_INVALID', 'A platform user ID is required and may only contain letters, numbers, underscores, and hyphens');
   }
   try {
@@ -450,10 +480,10 @@ app.post('/api/v1/chat/integrations/:platform/admins', authenticate, async (req,
     );
     const result = await pool.query(
       `INSERT INTO chat_authorized_users (integration_id, platform_user_id, username, role)
-       VALUES ($1, $2, $3, 'admin')
-       ON CONFLICT (integration_id, platform_user_id) DO UPDATE SET username = EXCLUDED.username
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (integration_id, platform_user_id) DO UPDATE SET username = EXCLUDED.username, role = EXCLUDED.role
        RETURNING id, integration_id, platform_user_id, username, role`,
-      [integrationResult.rows[0].id, platformUserId, username || null]
+      [integrationResult.rows[0].id, platformUserId, username || null, role]
     );
     await recordAudit(req, 'chat.admin.saved', 'chat_integration', platform, { platform_user_id: platformUserId });
     res.status(201).json({ admin: result.rows[0] });
