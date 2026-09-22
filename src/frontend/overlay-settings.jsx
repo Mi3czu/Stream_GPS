@@ -9,6 +9,7 @@ const OPTIONS = {
   textTheme: [['glass', 'Glass'], ['light', 'Light'], ['dark', 'Dark']],
   fontFamily: [['monospace', 'Standard (mono)'], ['Arial, sans-serif', 'Arial'], ['Roboto, sans-serif', 'Roboto'], ['Inter, sans-serif', 'Inter'], ['Oswald, sans-serif', 'Oswald']],
   mapShape: [['round', 'Round'], ['square', 'Square']],
+  mapRenderMode: [['legacy', 'Legacy'], ['rounded', 'Rounded + drift correction (experimental)']],
   trailDurationMinutes: [[0, 'Off'], [1, 'Last 1 minute'], [5, 'Last 5 minutes'], [15, 'Last 15 minutes']]
 };
 
@@ -99,6 +100,8 @@ const OverlaySettings = () => {
       </section>
       {choiceGroup('fontFamily', 'Font')}
       {choiceGroup('mapShape', 'Map shape')}
+      {choiceGroup('mapRenderMode', 'Map rendering')}
+      <p className="overlay-settings__hint">Rounded mode smooths visible corners and stabilizes very-low-speed GPS drift only in this overlay. Legacy shows raw positions unchanged.</p>
       {choiceGroup('trailDurationMinutes', 'Fading route trail')}
       <p className="overlay-settings__hint">The trail is visible only in this OBS overlay. Older fragments fade out and it never exposes the full private route history.</p>
       <section className="overlay-settings__section">
@@ -150,6 +153,8 @@ const OverlaySettings = () => {
             mapOpacity={config.mapOpacity}
             fadingTrail={config.trailDurationMinutes > 0}
             showHistoryMarkers={false}
+            roundedCorners={config.mapRenderMode === 'rounded'}
+            stationaryDriftCorrection={config.mapRenderMode === 'rounded'}
             followLatest
           />
           <small className="overlay-settings__attribution">{mapAttributionLabel(config.mapTheme)}</small>

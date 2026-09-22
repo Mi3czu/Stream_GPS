@@ -18,6 +18,7 @@ const ObsOverlay = () => {
   const [config, setConfig] = useState(null);
   const [trail, setTrail] = useState([]);
   const trailDurationRef = useRef(0);
+  const mapRenderModeRef = useRef('legacy');
   const [visible, setVisible] = useState(true);
   const [error, setError] = useState(null);
   const [, setClockTick] = useState(0);
@@ -33,7 +34,8 @@ const ObsOverlay = () => {
 
   useEffect(() => {
     trailDurationRef.current = Number(config?.trailDurationMinutes || 0);
-  }, [config?.trailDurationMinutes]);
+    mapRenderModeRef.current = config?.mapRenderMode || 'legacy';
+  }, [config?.mapRenderMode, config?.trailDurationMinutes]);
 
   useEffect(() => {
     const key = searchParams.get('key');
@@ -60,7 +62,7 @@ const ObsOverlay = () => {
           const nextDevice = JSON.parse(event.data).device;
           setDevice(nextDevice);
           const cutoff = Date.now() - trailDurationRef.current * 60 * 1000;
-          setTrail((current) => trailDurationRef.current > 0 ? [...current.filter((point) => point.recorded_at !== nextDevice.recorded_at), {
+          setTrail((current) => trailDurationRef.current > 0 || mapRenderModeRef.current === 'rounded' ? [...current.filter((point) => point.recorded_at !== nextDevice.recorded_at), {
             latitude: nextDevice.latitude, longitude: nextDevice.longitude, speed: nextDevice.speed, recorded_at: nextDevice.recorded_at
           }].filter((point) => new Date(point.recorded_at).getTime() >= cutoff).slice(-160) : []);
         });
@@ -81,13 +83,13 @@ const ObsOverlay = () => {
   useEffect(() => {
     const key = searchParams.get('key');
     if (!key || !config) return undefined;
-    if (!config.trailDurationMinutes) { setTrail([]); return undefined; }
+    if (!config.trailDurationMinutes && config.mapRenderMode !== 'rounded') { setTrail([]); return undefined; }
     let cancelled = false;
     axios.get(`/api/v1/overlays/${encodeURIComponent(overlayId)}/trail`, { params: { key } })
       .then((response) => { if (!cancelled) setTrail(response.data.positions || []); })
       .catch(() => { if (!cancelled) setTrail([]); });
     return () => { cancelled = true; };
-  }, [config?.trailDurationMinutes, overlayId, searchParams]);
+  }, [config?.mapRenderMode, config?.trailDurationMinutes, overlayId, searchParams]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockTick((value) => value + 1), 1_000);
@@ -103,7 +105,8 @@ const ObsOverlay = () => {
     speed: device.speed,
     recorded_at: device.recorded_at
   }];
-  const mapPositions = config.trailDurationMinutes > 0 ? [...trail.filter((point) => point.recorded_at !== device.recorded_at), ...position] : position;
+  const useVisualHistory = config.trailDurationMinutes > 0 || config.mapRenderMode === 'rounded';
+  const mapPositions = useVisualHistory ? [...trail.filter((point) => point.recorded_at !== device.recorded_at), ...position] : position;
   const stats = [
     config.stats.speed && ['Speed', device.speed === null ? null : `${Math.round(device.speed)} km/h`],
     config.stats.direction && ['Direction', compassDirection(device.heading)],
@@ -125,7 +128,7 @@ const ObsOverlay = () => {
     <main className={`obs-overlay obs-overlay--${config.textTheme}`} style={{ '--overlay-text-color': config.textColor, '--overlay-font': config.fontFamily }}>
       {config.statsPosition === 'above-map' && statsPanel}
       <div className={`obs-overlay__map obs-overlay__map--${config.mapShape}`} style={{ '--overlay-size': `${config.mapSize}px`, '--overlay-border': config.borderColor }}>
-        <GpsMap positions={mapPositions} mapTheme={config.mapTheme} size={config.mapSize} zoomConfig={config} zoomControl={false} attributionControl={false} mapOpacity={config.mapOpacity} showHistoryMarkers={false} fadingTrail={config.trailDurationMinutes > 0} followLatest />
+        <GpsMap positions={mapPositions} mapTheme={config.mapTheme} size={config.mapSize} zoomConfig={config} zoomControl={false} attributionControl={false} mapOpacity={config.mapOpacity} connectPoints={config.trailDurationMinutes > 0} showHistoryMarkers={false} fadingTrail={config.trailDurationMinutes > 0} roundedCorners={config.mapRenderMode === 'rounded'} stationaryDriftCorrection={config.mapRenderMode === 'rounded'} followLatest />
         <small className="obs-overlay__credits">{mapAttributionLabel(config.mapTheme)}</small>
       </div>
       {config.statsPosition === 'below-map' && statsPanel}

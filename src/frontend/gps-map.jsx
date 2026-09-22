@@ -55,6 +55,36 @@ const roundedSegment = (segment) => {
   return rounded;
 };
 
+const stabilizeStationaryDrift = (positions) => {
+  let anchor = null;
+  let stationarySamples = 0;
+  return positions.map((position) => {
+    const point = [Number(position.latitude), Number(position.longitude)];
+    const speed = Number(position.speed);
+    const isVerySlow = Number.isFinite(speed) && speed < 1.2;
+    if (!anchor || !isVerySlow) {
+      anchor = point;
+      stationarySamples = 0;
+      return position;
+    }
+    const accuracy = Number(position.accuracy);
+    const radius = Math.max(8, Math.min(20, Number.isFinite(accuracy) ? accuracy * 2.5 : 12));
+    const distance = distanceMeters(anchor, point);
+    if (distance <= radius) {
+      stationarySamples += 1;
+      return stationarySamples >= 3 ? { ...position, latitude: anchor[0], longitude: anchor[1], stationary_corrected: true } : position;
+    }
+    // Keep an established stationary anchor through moderate GNSS jumps, but
+    // release it once a low-speed position leaves the larger accuracy envelope.
+    if (stationarySamples >= 3 && distance <= radius * 2.5) {
+      return { ...position, latitude: anchor[0], longitude: anchor[1], stationary_corrected: true };
+    }
+    anchor = point;
+    stationarySamples = 0;
+    return position;
+  });
+};
+
 const zoomForSpeed = (speed, zoomConfig = {}) => {
   const {
     autoZoom = true,
@@ -108,8 +138,9 @@ export const mapAttributionLabel = (mapTheme) => {
   return '© OpenStreetMap contributors';
 };
 
-const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, showHistoryMarkers = true, fadingTrail = false, roundedCorners = false, followLatest = false, zoomControl = true, attributionControl = true, mapOpacity = 100 }) => {
-  const validPositions = positions.filter((position) => (
+const GpsMap = ({ positions = [], mapTheme = 'standard', size, zoomConfig, connectPoints = true, showHistoryMarkers = true, fadingTrail = false, roundedCorners = false, stationaryDriftCorrection = false, followLatest = false, zoomControl = true, attributionControl = true, mapOpacity = 100 }) => {
+  const displayedPositions = stationaryDriftCorrection ? stabilizeStationaryDrift(positions) : positions;
+  const validPositions = displayedPositions.filter((position) => (
     Number.isFinite(Number(position.latitude)) && Number.isFinite(Number(position.longitude))
   ));
   const points = validPositions.map((position) => [Number(position.latitude), Number(position.longitude)]);
