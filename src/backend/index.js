@@ -509,7 +509,7 @@ app.get('/api/v1/chat/kick/callback', async (req, res) => {
       [state.ownerId, String(user.user_id), user.name, encryptSecret(tokens.access_token), encryptSecret(tokens.refresh_token), Number(tokens.expires_in || 0), JSON.stringify({ oauth_scopes: tokens.scope || [] })]
     );
     const integration = await pool.query("SELECT * FROM chat_integrations WHERE owner_id = $1 AND platform = 'kick'", [state.ownerId]);
-    await subscribeKickChatEvents(integration.rows[0]);
+    subscribeKickChatEvents(integration.rows[0]).catch((error) => console.error('Kick event subscription error:', error.message));
     await recordAudit({ user: { sub: state.ownerId }, ip: req.ip }, 'chat.kick.connected', 'chat_integration', 'kick', { channel_id: user.user_id });
     res.redirect(`${accountUrl}?chat=kick-connected`);
   } catch (error) {
