@@ -42,7 +42,7 @@ const InstallAgent = () => {
 
         <article className="panel install-step">
           <span className="install-step__number">2</span>
-          <div><h2>Connect to the device computer via SSH</h2><p>From a computer on the same trusted network, connect to the device computer. Confirm the modem is visible before installing:</p><CopyCommand>{'mmcli -L'}</CopyCommand><p className="panel__hint">A modem such as <code>/Modem/0</code> should appear. The unit needs a GNSS-capable modem and an antenna connected to its GNSS port.</p></div>
+          <div><h2>Connect to the device computer via SSH</h2><p>First enable or start SSH access in the device's own administration interface. From a computer on the same trusted network, open Windows PowerShell or PuTTY and connect using the device IP address:</p><CopyCommand>{'ssh user@<computer_ip>'}</CopyCommand><p className="panel__hint">In PuTTY, select <strong>SSH</strong>, enter <code>&lt;computer_ip&gt;</code> as the host, then sign in as <code>user</code>. Use the SSH password shown or configured in the device administration interface.</p><p>After signing in, confirm the modem is visible before installing:</p><CopyCommand>{'mmcli -L'}</CopyCommand><p className="panel__hint">A modem such as <code>/Modem/0</code> should appear. The unit needs a GNSS-capable modem and an antenna connected to its GNSS port.</p></div>
         </article>
 
         <article className="panel install-step">
