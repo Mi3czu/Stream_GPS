@@ -77,14 +77,18 @@ const OverlaySettings = () => {
 
   if (!overlay || !config) return <main><p>{error || 'Loading overlay settings...'}</p></main>;
 
+  const choiceButtons = (field) => (
+    <div className="overlay-settings__choices">
+      {OPTIONS[field].map(([value, label]) => (
+        <button className={config[field] === value ? 'is-selected' : ''} type="button" key={value} onClick={() => update(field, value)}>{label}</button>
+      ))}
+    </div>
+  );
+
   const choiceGroup = (field, title) => (
     <section className="overlay-settings__section">
       <h2>{title}</h2>
-      <div className="overlay-settings__choices">
-        {OPTIONS[field].map(([value, label]) => (
-          <button className={config[field] === value ? 'is-selected' : ''} type="button" key={value} onClick={() => update(field, value)}>{label}</button>
-        ))}
-      </div>
+      {choiceButtons(field)}
     </section>
   );
 
@@ -108,9 +112,6 @@ const OverlaySettings = () => {
       <p className="overlay-settings__hint">Rounded mode smooths visible corners and stabilizes very-low-speed GPS drift only in this overlay. Legacy shows raw positions unchanged.</p>
       {choiceGroup('trailDurationMinutes', 'Fading route trail')}
       <p className="overlay-settings__hint">The trail is visible only in this OBS overlay. Older fragments fade out and it never exposes the full private route history.</p>
-      {choiceGroup('statsLayout', 'Statistics layout')}
-      {choiceGroup('statsAlign', 'Align statistics')}
-      {choiceGroup('statsWidth', 'Statistics width')}
       <section className="overlay-settings__section">
         <h2>Map size: {config.mapSize}px</h2>
         <input type="range" min="200" max="600" step="10" value={config.mapSize} onChange={(event) => update('mapSize', Number(event.target.value))} />
@@ -184,6 +185,20 @@ const OverlaySettings = () => {
             <option value="above-map">Above map</option>
           </select>
         </label>
+        <div className="overlay-settings__stat-layout-controls">
+          <div>
+            <h3>Style</h3>
+            {choiceButtons('statsLayout')}
+          </div>
+          <div>
+            <h3>Alignment</h3>
+            {choiceButtons('statsAlign')}
+          </div>
+          <div>
+            <h3>Width</h3>
+            {choiceButtons('statsWidth')}
+          </div>
+        </div>
         <label>Statistics text size: {config.statsTextSize}px
           <input type="range" min="10" max="28" value={config.statsTextSize} onChange={(event) => update('statsTextSize', Number(event.target.value))} />
         </label>
