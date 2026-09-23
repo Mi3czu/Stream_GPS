@@ -30,11 +30,7 @@ const STAT_OPTIONS = [
   ,['location', 'Location', 'Nearest locality from the built-in Europe database · data © GeoNames']
 ];
 const STAT_FIELDS = STAT_OPTIONS.map(([field]) => field);
-const PRESETS = {
-  'map-focus': { label: 'Map focus', statsLayout: 'compact', statsPosition: 'below-map', statsAlign: 'center', statsWidth: 'natural', stats: { speed: true, location: true, gpsSignal: false, direction: false, altitude: false, accuracy: false, localTime: false, maxSpeed: false, avgSpeed: false, tripDistance: false } },
-  telemetry: { label: 'Telemetry', statsLayout: 'stack', statsPosition: 'below-map', statsAlign: 'left', statsWidth: 'natural', stats: { speed: true, direction: true, altitude: true, accuracy: true, gpsSignal: true, localTime: false, maxSpeed: false, avgSpeed: false, tripDistance: true, location: true } },
-  compact: { label: 'Compact journey', statsLayout: 'compact', statsPosition: 'below-map', statsAlign: 'left', statsWidth: 'map-width', stats: { speed: true, direction: true, altitude: false, accuracy: false, gpsSignal: true, localTime: false, maxSpeed: true, avgSpeed: true, tripDistance: true, location: true } }
-};
+const HUD_ANCHORS = ['top-left', 'top-center', 'top-right', 'middle-left', 'middle-right', 'bottom-left', 'bottom-center', 'bottom-right'];
 
 const OverlaySettings = () => {
   const { deviceId, overlayId } = useParams();
@@ -58,7 +54,7 @@ const OverlaySettings = () => {
         const normalized = ['dark', 'transparent'].includes(savedConfig.mapTheme)
           ? { ...savedConfig, mapTheme: savedConfig.mapTheme === 'dark' ? 'night' : 'standard' }
           : savedConfig;
-        setConfig({ ...normalized, statsOrder: Array.isArray(normalized.statsOrder) ? normalized.statsOrder : STAT_FIELDS });
+        setConfig({ ...normalized, statsOrder: Array.isArray(normalized.statsOrder) ? normalized.statsOrder : STAT_FIELDS, hudAnchor: normalized.hudAnchor || `${normalized.statsPosition === 'above-map' ? 'top' : 'bottom'}-${normalized.statsAlign || 'left'}` });
       })
       .catch((requestError) => setError(requestError.response?.data?.message || requestError.message));
   }, [deviceId, navigate, overlayId]);
@@ -68,7 +64,11 @@ const OverlaySettings = () => {
     ...current,
     stats: { ...current.stats, [field]: value }
   }));
-  const applyPreset = (preset) => setConfig((current) => ({ ...current, ...PRESETS[preset], stats: { ...current.stats, ...PRESETS[preset].stats } }));
+  const setHudAnchor = (hudAnchor) => {
+    const [vertical, horizontal] = hudAnchor.split('-');
+    update('hudAnchor', hudAnchor);
+    if (vertical !== 'middle') { update('statsPosition', vertical === 'top' ? 'above-map' : 'below-map'); update('statsAlign', horizontal); }
+  };
   const reorderStat = (field, direction) => setConfig((current) => {
     const order = [...(current.statsOrder || STAT_FIELDS)]; const from = order.indexOf(field); const to = from + direction;
     if (from < 0 || to < 0 || to >= order.length) return current;
@@ -126,8 +126,7 @@ const OverlaySettings = () => {
       {message && <p className="overlay-settings__success">{message}</p>}
 
       <section className="overlay-settings__section overlay-settings__studio-intro">
-        <div><h2>Starting point</h2><p className="overlay-settings__hint">Presets arrange the telemetry HUD; map, route and privacy options remain under your control.</p></div>
-        <div className="overlay-settings__presets">{Object.entries(PRESETS).map(([key, preset]) => <button type="button" key={key} onClick={() => applyPreset(key)}>{preset.label}</button>)}</div>
+        <h2>Live composition</h2><p className="overlay-settings__hint">This is the scene sent to OBS. Select the telemetry HUD directly on the canvas, then place it around the map. Every enabled statistic appears here in its saved order.</p>
       </section>
 
       {choiceGroup('mapTheme', 'Map theme')}
@@ -176,12 +175,13 @@ const OverlaySettings = () => {
         </label>
       </section>
       <section className="overlay-settings__section">
-        <h2>Map layer</h2>
+        <h2>Scene canvas</h2>
         <label>Simulate speed: {previewSpeed} km/h
           <input type="range" min="0" max="300" value={previewSpeed} onChange={(event) => setPreviewSpeed(Number(event.target.value))} />
         </label>
-        <div className={`overlay-settings__preview overlay-settings__preview--${config.mapShape}`} style={{ '--preview-border': config.borderColor }}>
-          <GpsMap
+        <div className={`overlay-settings__scene overlay-settings__scene--${config.hudAnchor || 'bottom-left'} overlay-settings__scene--${config.statsLayout}`}>
+          <div className={`overlay-settings__preview overlay-settings__preview--${config.mapShape}`} style={{ '--preview-border': config.borderColor }}>
+            <GpsMap
             positions={[{ latitude: 52.2286, longitude: 21.0085, recorded_at: new Date(Date.now() - 180000).toISOString() }, { latitude: 52.2291, longitude: 21.0102, recorded_at: new Date(Date.now() - 90000).toISOString() }, { latitude: 52.2297, longitude: 21.0122, speed: previewSpeed, recorded_at: new Date().toISOString() }]}
             mapTheme={config.mapTheme}
             size={240}
@@ -194,8 +194,15 @@ const OverlaySettings = () => {
             roundedCorners={config.mapRenderMode === 'rounded'}
             stationaryDriftCorrection={config.mapRenderMode === 'rounded'}
             followLatest
-          />
-          <small className="overlay-settings__attribution">{mapAttributionLabel(config.mapTheme)}</small>
+            />
+            <small className="overlay-settings__attribution">{mapAttributionLabel(config.mapTheme)}</small>
+          </div>
+          <div className="overlay-settings__scene-hud" aria-label="Telemetry HUD preview">
+            {(config.statsOrder || STAT_FIELDS).filter((field) => config.stats[field]).map((field) => <span draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', field)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => onStatDrop(event, field)} key={field}>{STAT_OPTIONS.find(([name]) => name === field)[1]}</span>)}
+          </div>
+          <div className="overlay-settings__scene-placement" role="group" aria-label="Place telemetry HUD">
+            {HUD_ANCHORS.map((anchor) => <button type="button" key={anchor} className={config.hudAnchor === anchor ? 'is-selected' : ''} onClick={() => setHudAnchor(anchor)} aria-label={`Place telemetry ${anchor.replace('-', ' ')}`} title={anchor.replace('-', ' ')}>●</button>)}
+          </div>
         </div>
       </section>
       <section className="overlay-settings__section">
@@ -210,7 +217,7 @@ const OverlaySettings = () => {
               <input type="checkbox" checked={config.stats[field]} onChange={(event) => updateStat(field, event.target.checked)} />
               <span><strong>{label}</strong><small>{hint}</small></span>
             </label>
-              <span className="overlay-settings__stat-order"><button type="button" disabled={index === 0} onClick={() => reorderStat(field, -1)} aria-label={`Move ${label} up`}>↑</button><button type="button" disabled={index === STAT_FIELDS.length - 1} onClick={() => reorderStat(field, 1)} aria-label={`Move ${label} down`}>↓</button></span>
+              <span className="overlay-settings__stat-order"><button type="button" disabled={index === 0} onClick={() => reorderStat(field, -1)} aria-label={`Move ${label} earlier`}>{config.statsLayout === 'stack' ? '↑' : '←'}</button><button type="button" disabled={index === STAT_FIELDS.length - 1} onClick={() => reorderStat(field, 1)} aria-label={`Move ${label} later`}>{config.statsLayout === 'stack' ? '↓' : '→'}</button></span>
             </div>;
           })}
         </div>
@@ -222,23 +229,6 @@ const OverlaySettings = () => {
           <div>
             <h3>Width</h3>
             {choiceButtons('statsWidth')}
-          </div>
-        </div>
-        <div className="overlay-settings__layout-preview" style={{ '--preview-stats-text-size': `${Math.max(8, Math.round(config.statsTextSize * 0.7))}px` }}>
-          <strong>Live composition · click the controls on the map to place the telemetry layer</strong>
-          <div className={`overlay-settings__layout-diagram overlay-settings__layout-diagram--${config.statsPosition} overlay-settings__layout-diagram--${config.statsAlign} overlay-settings__layout-diagram--${config.statsWidth} overlay-settings__layout-diagram--${config.statsLayout}`}>
-            <div className="overlay-settings__diagram-map">Map
-              <div className="overlay-settings__layout-move" role="group" aria-label="Move statistics in the layout preview">
-                <button type="button" className={config.statsPosition === 'above-map' ? 'is-selected' : ''} onClick={() => update('statsPosition', 'above-map')} aria-label="Place statistics above map" title="Place above map">&uarr;</button>
-                <button type="button" className={config.statsAlign === 'left' ? 'is-selected' : ''} onClick={() => update('statsAlign', 'left')} aria-label="Align statistics left" title="Align left">&larr;</button>
-                <button type="button" className={config.statsAlign === 'center' ? 'is-selected' : ''} onClick={() => update('statsAlign', 'center')} aria-label="Center statistics" title="Center">&bull;</button>
-                <button type="button" className={config.statsAlign === 'right' ? 'is-selected' : ''} onClick={() => update('statsAlign', 'right')} aria-label="Align statistics right" title="Align right">&rarr;</button>
-                <button type="button" className={config.statsPosition === 'below-map' ? 'is-selected' : ''} onClick={() => update('statsPosition', 'below-map')} aria-label="Place statistics below map" title="Place below map">&darr;</button>
-              </div>
-            </div>
-            <div className="overlay-settings__diagram-stats">
-              {(config.statsOrder || STAT_FIELDS).filter((field) => config.stats[field]).map((field) => <i key={field}>{STAT_OPTIONS.find(([name]) => name === field)[1]}</i>)}
-            </div>
           </div>
         </div>
         <label>Statistics text size: {config.statsTextSize}px

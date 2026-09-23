@@ -7,6 +7,12 @@
 
 .obs-overlay { background: transparent; color: var(--overlay-text-color); margin: 0; min-height: 100vh; overflow: hidden; }
 .obs-overlay__content { display: flex; flex-direction: column; width: calc(var(--overlay-size) + 32px); }
+.obs-overlay__content--top-center .obs-overlay__stats, .obs-overlay__content--bottom-center .obs-overlay__stats { align-self: center; }
+.obs-overlay__content--top-right .obs-overlay__stats, .obs-overlay__content--bottom-right .obs-overlay__stats { align-self: flex-end; }
+.obs-overlay__content--bottom-left .obs-overlay__map, .obs-overlay__content--bottom-center .obs-overlay__map, .obs-overlay__content--bottom-right .obs-overlay__map { order: -1; }
+.obs-overlay__content--middle-left, .obs-overlay__content--middle-right { align-items: center; flex-direction: row; width: max-content; }
+.obs-overlay__content--middle-right .obs-overlay__map { order: -1; }
+.obs-overlay__content--middle-left .obs-overlay__stats, .obs-overlay__content--middle-right .obs-overlay__stats { margin-bottom: 0; max-width: 260px; }
 .obs-overlay__map { height: var(--overlay-size); margin: 16px; position: relative; width: var(--overlay-size); }
 .obs-overlay__map .gps-map { height: var(--overlay-size); width: var(--overlay-size); }
 .obs-overlay__map .leaflet-container { border: 3px solid var(--overlay-border); box-sizing: border-box; height: var(--overlay-size); overflow: hidden; width: var(--overlay-size); }

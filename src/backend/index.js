@@ -695,6 +695,7 @@ const DEFAULT_OVERLAY_CONFIG = {
   statsLayout: 'cards',
   statsAlign: 'left',
   statsWidth: 'natural',
+  hudAnchor: 'bottom-left',
   statsOrder: ['speed', 'direction', 'altitude', 'accuracy', 'gpsSignal', 'localTime', 'maxSpeed', 'avgSpeed', 'tripDistance', 'location'],
   stats: {
     speed: true,
@@ -720,7 +721,8 @@ function normalizeOverlayConfig(input) {
     ...DEFAULT_OVERLAY_CONFIG,
     ...(input || {}),
     stats: { ...DEFAULT_OVERLAY_CONFIG.stats, ...((input || {}).stats || {}) },
-    statsOrder
+    statsOrder,
+    hudAnchor: input?.hudAnchor || `${input?.statsPosition === 'above-map' ? 'top' : 'bottom'}-${input?.statsAlign || 'left'}`
   };
 }
 
@@ -754,6 +756,7 @@ function validateOverlayConfig(input) {
   if (!statNames.every((name) => typeof config.stats[name] === 'boolean') ||
       !Array.isArray(config.statsOrder) || config.statsOrder.length !== statNames.length || new Set(config.statsOrder).size !== statNames.length || !config.statsOrder.every((name) => statNames.includes(name)) ||
       !['above-map', 'below-map'].includes(config.statsPosition) ||
+      !['top-left', 'top-center', 'top-right', 'middle-left', 'middle-right', 'bottom-left', 'bottom-center', 'bottom-right'].includes(config.hudAnchor) ||
       !Number.isInteger(Number(config.statsTextSize)) || Number(config.statsTextSize) < 10 || Number(config.statsTextSize) > 28) return null;
   return { ...config, mapSize: Number(config.mapSize), mapOpacity, minSpeed, maxSpeed, minZoom, maxZoom, trailDurationMinutes, mapRenderMode: config.mapRenderMode, statsLayout: config.statsLayout, statsAlign: config.statsAlign, statsWidth: config.statsWidth, statsTextSize: Number(config.statsTextSize) };
 }
