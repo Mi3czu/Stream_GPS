@@ -209,15 +209,15 @@ const OverlaySettings = () => {
           <div className="overlay-settings__scene-hud" aria-label="Telemetry HUD preview">
             {(config.statsOrder || STAT_FIELDS).filter((field) => config.stats[field]).map((field) => <span draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', field)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => onStatDrop(event, field)} key={field}>{STAT_OPTIONS.find(([name]) => name === field)[1]}</span>)}
           </div>
+          </div>
           <div className="overlay-settings__scene-placement" role="group" aria-label="Place telemetry HUD">
             {HUD_ANCHORS.map((anchor) => <button type="button" key={anchor} className={config.hudAnchor === anchor ? 'is-selected' : ''} onClick={() => setHudAnchor(anchor)} aria-label={`Place telemetry ${anchor.replace('-', ' ')}`} title={anchor.replace('-', ' ')}>●</button>)}
-          </div>
           </div>
           <aside className="overlay-settings__scene-inspector">
             <strong>Telemetry HUD</strong><small>Toggle, drag or use arrows to set the order.</small>
             <div className="overlay-settings__stats">{telemetryRows}</div>
-            <div className="overlay-settings__scene-controls"><div><span>Style</span>{choiceButtons('statsLayout')}</div><div><span>Width</span>{choiceButtons('statsWidth')}</div><label>Text size: {config.statsTextSize}px<input type="range" min="10" max="28" value={config.statsTextSize} onChange={(event) => update('statsTextSize', Number(event.target.value))} /></label></div>
           </aside>
+          <div className="overlay-settings__scene-controls"><div><span>Style</span>{choiceButtons('statsLayout')}</div><div><span>Width</span>{choiceButtons('statsWidth')}</div><label>Text size: {config.statsTextSize}px<input type="range" min="10" max="28" value={config.statsTextSize} onChange={(event) => update('statsTextSize', Number(event.target.value))} /></label></div>
         </div>
       </section>
       <section className="overlay-settings__section overlay-settings__legacy-hud">
