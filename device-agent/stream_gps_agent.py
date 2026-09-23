@@ -10,13 +10,18 @@ CONFIG_PATH = Path('/etc/stream-gps-device/config.json')
 QUEUE_PATH = Path('/var/lib/stream-gps-device/queue.jsonl')
 STATE_DIR = QUEUE_PATH.parent
 UPDATE_STATUS_PATH = STATE_DIR / 'update-status.json'
+XTRA_PATH = STATE_DIR / 'xtra-assistance.bin'
+XTRA_STATUS_PATH = STATE_DIR / 'xtra-status.json'
+XTRA_REFRESH_SECONDS = 72 * 60 * 60
 UPDATE_SUCCESS_NOTICE_SECONDS = 10 * 60
-STATUS = {'started_at': time.time(), 'modem': None, 'modem_info': {}, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0}
+STATUS = {'started_at': time.time(), 'modem': None, 'modem_info': {}, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0,
+          'gnss': {'assisted_mode': 'Not checked', 'assistance': 'Not checked', 'source_rate_hz': None, 'last_fresh_fix': None}}
 LOCK = threading.Lock()
 DEFAULT_UPDATE_BASE = 'https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/device-agent'
 GITHUB_HEAD_API = 'https://api.github.com/repos/Mi3czu/Stream_GPS/commits/main'
 UPDATE_FILES = ('stream_gps_agent.py', 'stream-gps-device', 'stream-gps-device.service', 'VERSION')
 CPU_SAMPLE = None
+GNSS_RATE_SAMPLES = []
 
 def load_config():
     with CONFIG_PATH.open(encoding='utf-8') as handle: return json.load(handle)
@@ -178,9 +183,70 @@ def find_modem(config):
     matches = re.findall(r'/Modem/(\d+)', result.stdout)
     return matches[0] if matches else None
 
+def read_xtra_status():
+    try:
+        payload = json.loads(XTRA_STATUS_PATH.read_text(encoding='utf-8'))
+        return payload if isinstance(payload, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+def write_xtra_status(**details):
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        temporary = XTRA_STATUS_PATH.with_suffix('.tmp')
+        temporary.write_text(json.dumps(details), encoding='utf-8')
+        os.chmod(temporary, 0o600); temporary.replace(XTRA_STATUS_PATH)
+    except OSError:
+        pass
+
+def location_capabilities(modem):
+    result = run('mmcli', '-m', modem, '--location-status')
+    if result.returncode: return set(), []
+    text = result.stdout.lower()
+    capabilities = set(re.findall(r'\b(?:agps-msa|agps-msb|xtra)\b', text))
+    servers = re.findall(r'https://[^\s|]+', result.stdout)
+    return capabilities, servers
+
+def inject_xtra_assistance(modem, servers):
+    status = read_xtra_status()
+    fresh_cache = XTRA_PATH.exists() and time.time() - float(status.get('downloaded_at', 0)) < XTRA_REFRESH_SECONDS
+    if not fresh_cache:
+        downloaded = None
+        for server in servers:
+            try:
+                data = download(server, timeout=8)
+                if not 1024 <= len(data) <= 2 * 1024 * 1024: continue
+                downloaded = data; break
+            except (OSError, urllib.error.URLError, urllib.error.HTTPError):
+                continue
+        if downloaded is None:
+            return 'XTRA unavailable (using regular GNSS)'
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            temporary = XTRA_PATH.with_suffix('.tmp')
+            temporary.write_bytes(downloaded); os.chmod(temporary, 0o600); temporary.replace(XTRA_PATH)
+            write_xtra_status(downloaded_at=time.time(), bytes=len(downloaded))
+        except OSError:
+            return 'XTRA cache could not be saved'
+    result = run('mmcli', '-m', modem, '--location-inject-assistance-data=' + str(XTRA_PATH))
+    return 'XTRA injected' if result.returncode == 0 else 'XTRA rejected by modem (using regular GNSS)'
+
 def enable_gps(modem):
+    capabilities, servers = location_capabilities(modem)
+    assisted_mode = 'Not supported'
+    if {'agps-msb', 'agps-msa'} & capabilities:
+        # A-GPS must be selected before GPS RAW/NMEA starts. ModemManager can
+        # preserve the old sources across an agent restart, so restart them.
+        run('mmcli', '-m', modem, '--location-disable-gps-raw')
+        run('mmcli', '-m', modem, '--location-disable-gps-nmea')
+    for mode in ('agps-msb', 'agps-msa'):
+        if mode in capabilities and run('mmcli', '-m', modem, '--location-enable-' + mode).returncode == 0:
+            assisted_mode = mode.upper(); break
+    assistance = inject_xtra_assistance(modem, servers) if 'xtra' in capabilities and servers else 'XTRA not supported'
     run('mmcli', '-m', modem, '--location-enable-gps-raw')
     run('mmcli', '-m', modem, '--location-enable-gps-nmea')
+    with LOCK:
+        STATUS['gnss'].update(assisted_mode=assisted_mode, assistance=assistance)
 
 def parse_mmcli(text):
     values = {}
@@ -206,10 +272,12 @@ def parse_mmcli(text):
         try:
             if kind == 'RMC' and len(fields) >= 9 and fields[2] == 'A':
                 nmea['latitude'] = nmea_coordinate(fields[3], fields[4]); nmea['longitude'] = nmea_coordinate(fields[5], fields[6])
+                if fields[1]: nmea.setdefault('source_time', fields[1])
                 if fields[7]: nmea['speed'] = float(fields[7]) * 1.852
                 if fields[8]: nmea['heading'] = float(fields[8]) % 360
             elif kind == 'GGA' and len(fields) >= 10 and fields[6] not in ('', '0'):
                 nmea.setdefault('latitude', nmea_coordinate(fields[2], fields[3])); nmea.setdefault('longitude', nmea_coordinate(fields[4], fields[5]))
+                if fields[1]: nmea['source_time'] = fields[1]
                 if fields[7]: nmea['satellites'] = int(fields[7])
                 # ModemManager does not expose a metre accuracy value on every
                 # modem. GGA includes HDOP, from which a conservative GPS
@@ -222,6 +290,7 @@ def parse_mmcli(text):
     latitude = latitude if latitude is not None else nmea.get('latitude'); longitude = longitude if longitude is not None else nmea.get('longitude')
     if latitude is None or longitude is None: return None
     position = {'latitude': latitude, 'longitude': longitude, 'recorded_at': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')}
+    if nmea.get('source_time'): position['_gnss_time'] = nmea['source_time']
     mappings = {'altitude': ('modem.location.gps.altitude',), 'speed': ('modem.location.gps.speed',),
                 'heading': ('modem.location.gps.heading',), 'accuracy': ('modem.location.gps.accuracy',),
                 'satellites': ('modem.location.gps.satellites',)}
@@ -235,6 +304,30 @@ def read_position(modem):
     result = run('mmcli', '-K', '-m', modem, '--location-get')
     if result.returncode: raise RuntimeError(result.stderr.strip() or 'mmcli location request failed')
     return parse_mmcli(result.stdout)
+
+def nmea_seconds(value):
+    match = re.fullmatch(r'(\d{2})(\d{2})(\d{2}(?:\.\d+)?)', str(value or ''))
+    if not match: return None
+    hours, minutes, seconds = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+def update_gnss_metrics(position):
+    global GNSS_RATE_SAMPLES
+    source_time = position.get('_gnss_time')
+    if not source_time: return
+    now = time.time(); source_seconds = nmea_seconds(source_time)
+    with LOCK:
+        gnss = STATUS['gnss']
+        previous_time = gnss.get('source_time')
+        previous_seconds = nmea_seconds(previous_time)
+        if source_time != previous_time:
+            if source_seconds is not None and previous_seconds is not None:
+                interval = source_seconds - previous_seconds
+                if interval <= 0: interval += 24 * 60 * 60
+                if 0.05 <= interval <= 30:
+                    GNSS_RATE_SAMPLES = (GNSS_RATE_SAMPLES + [interval])[-8:]
+                    gnss['source_rate_hz'] = round(len(GNSS_RATE_SAMPLES) / sum(GNSS_RATE_SAMPLES), 1)
+            gnss.update(source_time=source_time, last_fresh_fix=now)
 
 def queue_items():
     if not QUEUE_PATH.exists(): return []
@@ -403,6 +496,7 @@ def tracking_loop():
             if position is None:
                 with LOCK: STATUS['gps_fix'] = False; STATUS['last_error'] = 'Waiting for GPS fix'
                 time.sleep(max(2, int(config.get('interval_seconds', 2)))); continue
+            update_gnss_metrics(position)
             with LOCK: STATUS['gps_fix'] = True; STATUS['last_position'] = position; STATUS['last_error'] = None
             pending = queue_items(); pending.append(dict(position, _queued_at=time.time()))
             remaining = []
@@ -459,6 +553,12 @@ class Handler(BaseHTTPRequestHandler):
         signal_text = f'{signal}%' if signal is not None else 'Not available'
         satellites = (status.get('last_position') or {}).get('satellites')
         satellites_text = str(satellites) if satellites is not None else 'Not available'
+        gnss = status.get('gnss') or {}
+        source_rate = gnss.get('source_rate_hz')
+        source_rate_text = f'{source_rate:g} Hz' if source_rate is not None else 'Measuring'
+        fresh_fix = gnss.get('last_fresh_fix')
+        source_hint = f'last new NMEA fix {elapsed(fresh_fix)}' if fresh_fix else 'waiting for a new NMEA fix'
+        assisted_hint = f'{gnss.get("assisted_mode", "Not checked")} · {gnss.get("assistance", "Not checked")}'
         connected = bool(status.get('last_upload') and time.time() - status['last_upload'] < 90)
         upload_text, upload_class = ('Connected', 'good') if connected else ('Waiting for upload', 'warn')
         gps_text, gps_class = ('GPS fix active', 'good') if status.get('gps_fix') else ('Waiting for GPS fix', 'warn')
@@ -499,6 +599,8 @@ class Handler(BaseHTTPRequestHandler):
         ))
         error = status.get('last_error')
         error_html = f'<p class="status-error"><b>Attention:</b> {html.escape(str(error))}</p>' if error and error != 'Waiting for GPS fix' else ''
+        error_html = (f'<p><b>GNSS diagnostics:</b> {html.escape(source_rate_text)} · {html.escape(source_hint)}'
+                      f'<br><small>A-GPS: {html.escape(assisted_hint)}</small></p>') + error_html
         return f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS Device</title><style>body{{background:#0b1120;color:#e5edf7;font:16px system-ui;margin:0;padding:24px}}main{{margin:auto;max-width:860px}}section,details{{background:#121b2b;border:1px solid #28364b;border-radius:14px;margin:14px 0;padding:18px}}h1,h2,p{{margin-top:0}}h1{{font-size:1.55rem;margin-bottom:4px}}h2{{font-size:1.05rem;margin-bottom:8px}}p,small{{color:#aab9cc}}button{{background:#1f6feb;border:0;border-radius:8px;color:white;cursor:pointer;font:inherit;font-weight:700;padding:9px 13px}}button.secondary{{background:#28364b}}input{{background:#0f1726;border:1px solid #44536a;border-radius:8px;box-sizing:border-box;color:white;margin:5px 0 14px;padding:10px;width:100%}}.top{{align-items:center;display:flex;gap:16px;justify-content:space-between}}.top p{{margin:0}}.health,.modem-grid,.system-grid{{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:16px}}.health-card,.metric,.modem-grid div{{background:#0f1726;border:1px solid #28364b;border-radius:10px;padding:12px}}.health-card span,.metric span,.modem-grid span{{color:#93a5bd;display:block;font-size:.75rem;font-weight:700;text-transform:uppercase}}.health-card b,.metric b,.modem-grid b{{display:block;font-size:1rem;margin:6px 0 3px;overflow-wrap:anywhere}}.health-card small,.metric small{{font-size:.76rem}}.good{{color:#35d39a}}.warn{{color:#fbbf24}}.bad{{color:#f97066}}.status-error{{background:#3b2028;border:1px solid #71333d;border-radius:9px;color:#ffd1cc;margin:14px 0 0;padding:10px 12px}}details{{padding:0}}summary{{align-items:center;cursor:pointer;display:flex;justify-content:space-between;list-style:none;padding:18px}}summary::-webkit-details-marker{{display:none}}summary small{{margin-left:auto;margin-right:12px}}details>div{{border-top:1px solid #28364b;padding:18px}}.key-row{{display:flex;gap:8px}}.key-row input{{margin-bottom:14px}}.key-row button{{height:42px;margin-top:5px;white-space:nowrap}}code{{overflow-wrap:anywhere}}@media(max-width:650px){{body{{padding:14px}}.top{{align-items:flex-start;flex-direction:column}}.health,.modem-grid,.system-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}</style></head><body><main><header class="top"><div><h1>Stream GPS Device</h1><p>Live health, modem and system status.</p></div><button class="secondary" onclick="location.reload()">Refresh status</button></header><section><h2>Device health</h2><div class="health"><div class="health-card"><span>GPS</span><b class="{gps_class}">{gps_text}</b><small>Modem {html.escape(str(status.get('modem') or 'not detected'))}</small></div><div class="health-card"><span>Upload</span><b class="{upload_class}">{upload_text}</b><small>Last upload {html.escape(elapsed(status.get('last_upload')))}</small></div><div class="health-card"><span>Satellites</span><b class="{'good' if satellites is not None and satellites >= 4 else 'warn'}">{html.escape(satellites_text)}</b><small>GPS satellites in use</small></div><div class="health-card"><span>Offline queue</span><b>{status.get('queue_size', 0)}</b><small>stored positions</small></div></div>{error_html}</section><section><div class="top"><div><h2>Modem</h2><p>{html.escape(modem_details)}</p></div></div><div class="modem-grid"><div><span>Network</span><b>{html.escape(modem_name)}</b></div><div><span>Registration</span><b>{html.escape(registration)}</b></div><div><span>Technology</span><b>{html.escape(technology)}</b></div><div><span>Signal quality</span><b class="{'good' if signal is not None and signal >= 50 else 'warn'}">{html.escape(signal_text)}</b></div></div></section><section><h2>Viewer privacy</h2><p>Public location sharing: {sharing_text}</p>{sharing_form}<p>Only the viewer map is affected. GPS uploads and the private dashboard continue working.</p></section><details><summary><h2>Configuration</h2><small>{html.escape(config['api_url'])} · {html.escape(str(config.get('modem_id', 'auto')))} · {float(config.get('interval_seconds', 2)):g}s</small></summary><div><form method="post" action="/save"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" value="{html.escape(config['api_url'])}" required><label>Device ID</label><input name="device_id" value="{html.escape(config['device_id'])}" required><label>New device key (leave empty to keep current)</label><div class="key-row"><input id="device-key" name="device_key" type="password"><button class="secondary" id="toggle-key" type="button">Show</button></div><label>Update interval in seconds (0.5–10)</label><input name="interval_seconds" type="number" min="0.5" max="10" step="0.5" value="{float(config.get('interval_seconds',2)):g}"><label>Modem ID (`auto` recommended)</label><input name="modem_id" value="{html.escape(str(config.get('modem_id','auto')))}"><button>Save configuration</button></form></div></details><section><div class="top"><div><h2>System</h2><p>Agent version <b>{html.escape(current_version())}</b> · running for {html.escape(elapsed(status.get('started_at')))}</p></div><form method="post" action="/check-update"><input type="hidden" name="csrf" value="{self.csrf}"><button class="secondary">Check for updates</button></form></div><div class="system-grid">{system_cards}</div>{update_text}</section><script>const toggle=document.getElementById('toggle-key');if(toggle)toggle.onclick=()=>{{const key=document.getElementById('device-key');key.type=key.type==='password'?'text':'password';toggle.textContent=key.type==='password'?'Show':'Hide'}}</script>{auto_refresh}</main></body></html>'''
     def do_GET(self):
         if not self.require_auth(): return
