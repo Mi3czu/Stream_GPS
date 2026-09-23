@@ -695,6 +695,7 @@ const DEFAULT_OVERLAY_CONFIG = {
   statsLayout: 'cards',
   statsAlign: 'left',
   statsWidth: 'natural',
+  statsOrder: ['speed', 'direction', 'altitude', 'accuracy', 'gpsSignal', 'localTime', 'maxSpeed', 'avgSpeed', 'tripDistance', 'location'],
   stats: {
     speed: true,
     direction: true,
@@ -712,10 +713,14 @@ const DEFAULT_OVERLAY_CONFIG = {
 };
 
 function normalizeOverlayConfig(input) {
+  const statsOrder = Array.isArray(input?.statsOrder)
+    ? [...input.statsOrder.filter((name, index, order) => Object.prototype.hasOwnProperty.call(DEFAULT_OVERLAY_CONFIG.stats, name) && order.indexOf(name) === index), ...DEFAULT_OVERLAY_CONFIG.statsOrder.filter((name) => !input.statsOrder.includes(name))]
+    : DEFAULT_OVERLAY_CONFIG.statsOrder;
   return {
     ...DEFAULT_OVERLAY_CONFIG,
     ...(input || {}),
-    stats: { ...DEFAULT_OVERLAY_CONFIG.stats, ...((input || {}).stats || {}) }
+    stats: { ...DEFAULT_OVERLAY_CONFIG.stats, ...((input || {}).stats || {}) },
+    statsOrder
   };
 }
 
@@ -747,6 +752,7 @@ function validateOverlayConfig(input) {
       minSpeed >= maxSpeed || minZoom < 3 || maxZoom > 19 || minZoom >= maxZoom) return null;
   const statNames = Object.keys(DEFAULT_OVERLAY_CONFIG.stats);
   if (!statNames.every((name) => typeof config.stats[name] === 'boolean') ||
+      !Array.isArray(config.statsOrder) || config.statsOrder.length !== statNames.length || new Set(config.statsOrder).size !== statNames.length || !config.statsOrder.every((name) => statNames.includes(name)) ||
       !['above-map', 'below-map'].includes(config.statsPosition) ||
       !Number.isInteger(Number(config.statsTextSize)) || Number(config.statsTextSize) < 10 || Number(config.statsTextSize) > 28) return null;
   return { ...config, mapSize: Number(config.mapSize), mapOpacity, minSpeed, maxSpeed, minZoom, maxZoom, trailDurationMinutes, mapRenderMode: config.mapRenderMode, statsLayout: config.statsLayout, statsAlign: config.statsAlign, statsWidth: config.statsWidth, statsTextSize: Number(config.statsTextSize) };

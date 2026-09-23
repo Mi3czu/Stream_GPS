@@ -29,6 +29,12 @@ const STAT_OPTIONS = [
   ['tripDistance', 'Trip distance', 'Distance calculated in the current session']
   ,['location', 'Location', 'Nearest locality from the built-in Europe database · data © GeoNames']
 ];
+const STAT_FIELDS = STAT_OPTIONS.map(([field]) => field);
+const PRESETS = {
+  'map-focus': { label: 'Map focus', statsLayout: 'compact', statsPosition: 'below-map', statsAlign: 'center', statsWidth: 'natural', stats: { speed: true, location: true, gpsSignal: false, direction: false, altitude: false, accuracy: false, localTime: false, maxSpeed: false, avgSpeed: false, tripDistance: false } },
+  telemetry: { label: 'Telemetry', statsLayout: 'stack', statsPosition: 'below-map', statsAlign: 'left', statsWidth: 'natural', stats: { speed: true, direction: true, altitude: true, accuracy: true, gpsSignal: true, localTime: false, maxSpeed: false, avgSpeed: false, tripDistance: true, location: true } },
+  compact: { label: 'Compact journey', statsLayout: 'compact', statsPosition: 'below-map', statsAlign: 'left', statsWidth: 'map-width', stats: { speed: true, direction: true, altitude: false, accuracy: false, gpsSignal: true, localTime: false, maxSpeed: true, avgSpeed: true, tripDistance: true, location: true } }
+};
 
 const OverlaySettings = () => {
   const { deviceId, overlayId } = useParams();
@@ -49,9 +55,10 @@ const OverlaySettings = () => {
         // Retired experimental/provider-backed selections are made safe as
         // soon as an overlay is opened for editing.
         setOverlay(response.data.overlay);
-        setConfig(['dark', 'transparent'].includes(savedConfig.mapTheme)
+        const normalized = ['dark', 'transparent'].includes(savedConfig.mapTheme)
           ? { ...savedConfig, mapTheme: savedConfig.mapTheme === 'dark' ? 'night' : 'standard' }
-          : savedConfig);
+          : savedConfig;
+        setConfig({ ...normalized, statsOrder: Array.isArray(normalized.statsOrder) ? normalized.statsOrder : STAT_FIELDS });
       })
       .catch((requestError) => setError(requestError.response?.data?.message || requestError.message));
   }, [deviceId, navigate, overlayId]);
@@ -61,6 +68,23 @@ const OverlaySettings = () => {
     ...current,
     stats: { ...current.stats, [field]: value }
   }));
+  const applyPreset = (preset) => setConfig((current) => ({ ...current, ...PRESETS[preset], stats: { ...current.stats, ...PRESETS[preset].stats } }));
+  const reorderStat = (field, direction) => setConfig((current) => {
+    const order = [...(current.statsOrder || STAT_FIELDS)]; const from = order.indexOf(field); const to = from + direction;
+    if (from < 0 || to < 0 || to >= order.length) return current;
+    [order[from], order[to]] = [order[to], order[from]];
+    return { ...current, statsOrder: order };
+  });
+  const onStatDrop = (event, target) => {
+    const source = event.dataTransfer.getData('text/plain');
+    if (!source || source === target) return;
+    setConfig((current) => {
+      const order = [...(current.statsOrder || STAT_FIELDS)]; const from = order.indexOf(source); const to = order.indexOf(target);
+      if (from < 0 || to < 0) return current;
+      order.splice(from, 1); order.splice(to, 0, source);
+      return { ...current, statsOrder: order };
+    });
+  };
   const save = async () => {
     const token = sessionStorage.getItem('accessToken');
     try {
@@ -96,10 +120,15 @@ const OverlaySettings = () => {
   return (
     <main className="overlay-settings">
       <Link className="back-link" to={`/devices/${encodeURIComponent(deviceId)}`}><span aria-hidden="true">←</span> Back to device</Link>
-      <h1>Overlay settings</h1>
-      <p>{overlay.name}</p>
+      <h1>Overlay Studio</h1>
+      <p>Compose the map and live telemetry for <strong>{overlay.name}</strong>.</p>
       {error && <p className="overlay-settings__error">{error}</p>}
       {message && <p className="overlay-settings__success">{message}</p>}
+
+      <section className="overlay-settings__section overlay-settings__studio-intro">
+        <div><h2>Starting point</h2><p className="overlay-settings__hint">Presets arrange the telemetry HUD; map, route and privacy options remain under your control.</p></div>
+        <div className="overlay-settings__presets">{Object.entries(PRESETS).map(([key, preset]) => <button type="button" key={key} onClick={() => applyPreset(key)}>{preset.label}</button>)}</div>
+      </section>
 
       {choiceGroup('mapTheme', 'Map theme')}
       {choiceGroup('textTheme', 'Text theme')}
@@ -147,7 +176,7 @@ const OverlaySettings = () => {
         </label>
       </section>
       <section className="overlay-settings__section">
-        <h2>Preview</h2>
+        <h2>Map layer</h2>
         <label>Simulate speed: {previewSpeed} km/h
           <input type="range" min="0" max="300" value={previewSpeed} onChange={(event) => setPreviewSpeed(Number(event.target.value))} />
         </label>
@@ -170,15 +199,20 @@ const OverlaySettings = () => {
         </div>
       </section>
       <section className="overlay-settings__section">
-        <h2>Stats and layout</h2>
+        <h2>Telemetry HUD</h2>
         <p className="overlay-settings__hint">Only enabled values with GPS data will be shown in OBS.</p>
         <div className="overlay-settings__stats">
-          {STAT_OPTIONS.map(([field, label, hint]) => (
-            <label key={field}>
+          {(config.statsOrder || STAT_FIELDS).map((field) => {
+            const [, label, hint] = STAT_OPTIONS.find(([name]) => name === field);
+            const index = (config.statsOrder || STAT_FIELDS).indexOf(field);
+            return <div className="overlay-settings__stat-row" draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', field)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => onStatDrop(event, field)} key={field}>
+            <label>
               <input type="checkbox" checked={config.stats[field]} onChange={(event) => updateStat(field, event.target.checked)} />
               <span><strong>{label}</strong><small>{hint}</small></span>
             </label>
-          ))}
+              <span className="overlay-settings__stat-order"><button type="button" disabled={index === 0} onClick={() => reorderStat(field, -1)} aria-label={`Move ${label} up`}>↑</button><button type="button" disabled={index === STAT_FIELDS.length - 1} onClick={() => reorderStat(field, 1)} aria-label={`Move ${label} down`}>↓</button></span>
+            </div>;
+          })}
         </div>
         <div className="overlay-settings__stat-layout-controls">
           <div>
@@ -191,7 +225,7 @@ const OverlaySettings = () => {
           </div>
         </div>
         <div className="overlay-settings__layout-preview" style={{ '--preview-stats-text-size': `${Math.max(8, Math.round(config.statsTextSize * 0.7))}px` }}>
-          <strong>Layout preview</strong>
+          <strong>Live composition · click the controls on the map to place the telemetry layer</strong>
           <div className={`overlay-settings__layout-diagram overlay-settings__layout-diagram--${config.statsPosition} overlay-settings__layout-diagram--${config.statsAlign} overlay-settings__layout-diagram--${config.statsWidth} overlay-settings__layout-diagram--${config.statsLayout}`}>
             <div className="overlay-settings__diagram-map">Map
               <div className="overlay-settings__layout-move" role="group" aria-label="Move statistics in the layout preview">
@@ -203,7 +237,7 @@ const OverlaySettings = () => {
               </div>
             </div>
             <div className="overlay-settings__diagram-stats">
-              {STAT_OPTIONS.filter(([field]) => config.stats[field]).map(([, label]) => <i key={label}>{label}</i>)}
+              {(config.statsOrder || STAT_FIELDS).filter((field) => config.stats[field]).map((field) => <i key={field}>{STAT_OPTIONS.find(([name]) => name === field)[1]}</i>)}
             </div>
           </div>
         </div>

@@ -107,18 +107,19 @@ const ObsOverlay = () => {
   }];
   const useVisualHistory = config.trailDurationMinutes > 0 || config.mapRenderMode === 'rounded';
   const mapPositions = useVisualHistory ? [...trail.filter((point) => point.recorded_at !== device.recorded_at), ...position] : position;
-  const stats = [
-    config.stats.speed && ['Speed', device.speed === null ? null : `${Math.round(device.speed)} km/h`],
-    config.stats.direction && ['Direction', compassDirection(device.heading)],
-    config.stats.altitude && ['Altitude', device.altitude === null ? null : `${Math.round(device.altitude)} m`],
-    config.stats.accuracy && ['Accuracy', device.accuracy === null ? null : `${Math.round(device.accuracy)} m`],
-    config.stats.gpsSignal && ['GPS', device.satellites === null ? null : `${device.satellites} satellites`],
-    config.stats.localTime && ['Local time', new Date().toLocaleTimeString()],
-    config.stats.maxSpeed && ['Max speed', device.max_session_speed === null ? null : `${Math.round(device.max_session_speed)} km/h`],
-    config.stats.avgSpeed && ['Avg speed', device.avg_session_speed === null ? null : `${Math.round(device.avg_session_speed)} km/h`],
-    config.stats.tripDistance && ['Trip distance', device.trip_distance_m === null ? null : `${(device.trip_distance_m / 1000).toFixed(2)} km`]
-    ,config.stats.location && ['Location', device.locality]
-  ].filter((item) => item && item[1]);
+  const statsByField = {
+    speed: config.stats.speed && ['Speed', device.speed === null ? null : `${Math.round(device.speed)} km/h`],
+    direction: config.stats.direction && ['Direction', compassDirection(device.heading)],
+    altitude: config.stats.altitude && ['Altitude', device.altitude === null ? null : `${Math.round(device.altitude)} m`],
+    accuracy: config.stats.accuracy && ['Accuracy', device.accuracy === null ? null : `${Math.round(device.accuracy)} m`],
+    gpsSignal: config.stats.gpsSignal && ['GPS', device.satellites === null ? null : `${device.satellites} satellites`],
+    localTime: config.stats.localTime && ['Local time', new Date().toLocaleTimeString()],
+    maxSpeed: config.stats.maxSpeed && ['Max speed', device.max_session_speed === null ? null : `${Math.round(device.max_session_speed)} km/h`],
+    avgSpeed: config.stats.avgSpeed && ['Avg speed', device.avg_session_speed === null ? null : `${Math.round(device.avg_session_speed)} km/h`],
+    tripDistance: config.stats.tripDistance && ['Trip distance', device.trip_distance_m === null ? null : `${(device.trip_distance_m / 1000).toFixed(2)} km`],
+    location: config.stats.location && ['Location', device.locality]
+  };
+  const stats = (config.statsOrder || Object.keys(statsByField)).map((field) => statsByField[field]).filter((item) => item && item[1]);
   const statsPanel = stats.length ? (
     <section className={`obs-overlay__stats obs-overlay__stats--${config.statsLayout || 'cards'} obs-overlay__stats--${config.statsAlign || 'left'} obs-overlay__stats--${config.statsWidth || 'natural'}`} style={{ '--stats-text-size': `${config.statsTextSize}px` }}>
       {stats.map(([label, value]) => <span className={label === 'Location' ? 'obs-overlay__stat obs-overlay__stat--location' : 'obs-overlay__stat'} key={label}><strong>{label}</strong><b>{value}</b></span>)}

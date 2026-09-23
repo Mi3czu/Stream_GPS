@@ -19,6 +19,17 @@
 .overlay-settings__stats { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .overlay-settings__stats label { align-items: flex-start; display: flex; gap: 8px; }
 .overlay-settings__stats small { color: #64748b; display: block; font-size: 0.75rem; margin-top: 2px; }
+.overlay-settings__studio-intro { align-items: center; display: flex; gap: 18px; justify-content: space-between; }
+.overlay-settings__studio-intro h2 { margin-bottom: 6px; }
+.overlay-settings__studio-intro .overlay-settings__hint { margin-bottom: 0; }
+.overlay-settings__presets { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+.overlay-settings__presets button { background: #1e3a5f; color: #e5f1ff; white-space: nowrap; }
+.overlay-settings__stat-row { align-items: flex-start; background: rgba(15, 27, 45, .46); border: 1px solid #334155; border-radius: 8px; cursor: grab; display: flex; gap: 8px; justify-content: space-between; min-height: 48px; padding: 8px; }
+.overlay-settings__stat-row:has(input:not(:checked)) { opacity: .62; }
+.overlay-settings__stat-row label { flex: 1; margin: 0; }
+.overlay-settings__stat-order { display: flex; flex-direction: column; gap: 3px; }
+.overlay-settings__stat-order button { background: #1e3a5f; border-radius: 4px; color: #e5f1ff; font-size: .8rem; line-height: 1; min-width: 26px; padding: 4px; }
+.overlay-settings__stat-order button:disabled { cursor: default; opacity: .35; }
 .overlay-settings__stat-layout-controls { display: grid; gap: 14px; margin: 18px 0; }
 .overlay-settings__stat-layout-controls h3 { font-size: .9rem; margin: 0 0 8px; }
 .overlay-settings__layout-preview { background: #0f1b2d; border: 1px dashed #3b516e; border-radius: 8px; margin: 18px 0; padding: 12px; }
@@ -50,3 +61,4 @@
 .overlay-settings__layout-move button:nth-child(3) { grid-column: 2; grid-row: 2; }
 .overlay-settings__layout-move button:nth-child(4) { grid-column: 3; grid-row: 2; }
 .overlay-settings__layout-move button:nth-child(5) { grid-column: 2; grid-row: 3; }
+@media (max-width: 560px) { .overlay-settings__studio-intro { align-items: flex-start; flex-direction: column; }.overlay-settings__presets { justify-content: flex-start; } }
