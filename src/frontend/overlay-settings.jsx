@@ -116,6 +116,14 @@ const OverlaySettings = () => {
       {choiceButtons(field)}
     </section>
   );
+  const telemetryRows = (config.statsOrder || STAT_FIELDS).map((field) => {
+    const [, label, hint] = STAT_OPTIONS.find(([name]) => name === field);
+    const index = (config.statsOrder || STAT_FIELDS).indexOf(field);
+    return <div className="overlay-settings__stat-row" draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', field)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => onStatDrop(event, field)} key={field}>
+      <label><input type="checkbox" checked={config.stats[field]} onChange={(event) => updateStat(field, event.target.checked)} /><span><strong>{label}</strong><small>{hint}</small></span></label>
+      <span className="overlay-settings__stat-order"><button type="button" disabled={index === 0} onClick={() => reorderStat(field, -1)} aria-label={`Move ${label} earlier`}>{config.statsLayout === 'stack' ? '↑' : '←'}</button><button type="button" disabled={index === STAT_FIELDS.length - 1} onClick={() => reorderStat(field, 1)} aria-label={`Move ${label} later`}>{config.statsLayout === 'stack' ? '↓' : '→'}</button></span>
+    </div>;
+  });
 
   return (
     <main className="overlay-settings">
@@ -179,7 +187,8 @@ const OverlaySettings = () => {
         <label>Simulate speed: {previewSpeed} km/h
           <input type="range" min="0" max="300" value={previewSpeed} onChange={(event) => setPreviewSpeed(Number(event.target.value))} />
         </label>
-        <div className={`overlay-settings__scene overlay-settings__scene--${config.hudAnchor || 'bottom-left'} overlay-settings__scene--${config.statsLayout}`}>
+        <div className={`overlay-settings__scene overlay-settings__scene--${config.hudAnchor || 'bottom-left'} overlay-settings__scene--${config.statsLayout}`} style={{ '--scene-hud-text-size': `${Math.max(8, Math.round(config.statsTextSize * 0.72))}px` }}>
+          <div className="overlay-settings__scene-stage">
           <div className={`overlay-settings__preview overlay-settings__preview--${config.mapShape}`} style={{ '--preview-border': config.borderColor }}>
             <GpsMap
             positions={[{ latitude: 52.2286, longitude: 21.0085, recorded_at: new Date(Date.now() - 180000).toISOString() }, { latitude: 52.2291, longitude: 21.0102, recorded_at: new Date(Date.now() - 90000).toISOString() }, { latitude: 52.2297, longitude: 21.0122, speed: previewSpeed, recorded_at: new Date().toISOString() }]}
@@ -203,9 +212,15 @@ const OverlaySettings = () => {
           <div className="overlay-settings__scene-placement" role="group" aria-label="Place telemetry HUD">
             {HUD_ANCHORS.map((anchor) => <button type="button" key={anchor} className={config.hudAnchor === anchor ? 'is-selected' : ''} onClick={() => setHudAnchor(anchor)} aria-label={`Place telemetry ${anchor.replace('-', ' ')}`} title={anchor.replace('-', ' ')}>●</button>)}
           </div>
+          </div>
+          <aside className="overlay-settings__scene-inspector">
+            <strong>Telemetry HUD</strong><small>Toggle, drag or use arrows to set the order.</small>
+            <div className="overlay-settings__stats">{telemetryRows}</div>
+            <div className="overlay-settings__scene-controls"><div><span>Style</span>{choiceButtons('statsLayout')}</div><div><span>Width</span>{choiceButtons('statsWidth')}</div><label>Text size: {config.statsTextSize}px<input type="range" min="10" max="28" value={config.statsTextSize} onChange={(event) => update('statsTextSize', Number(event.target.value))} /></label></div>
+          </aside>
         </div>
       </section>
-      <section className="overlay-settings__section">
+      <section className="overlay-settings__section overlay-settings__legacy-hud">
         <h2>Telemetry HUD</h2>
         <p className="overlay-settings__hint">Only enabled values with GPS data will be shown in OBS.</p>
         <div className="overlay-settings__stats">
