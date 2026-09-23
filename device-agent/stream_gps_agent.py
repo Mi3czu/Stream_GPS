@@ -13,6 +13,7 @@ UPDATE_STATUS_PATH = STATE_DIR / 'update-status.json'
 XTRA_PATH = STATE_DIR / 'xtra-assistance.bin'
 XTRA_STATUS_PATH = STATE_DIR / 'xtra-status.json'
 XTRA_REFRESH_SECONDS = 72 * 60 * 60
+XTRA_RETRY_SECONDS = 30
 UPDATE_SUCCESS_NOTICE_SECONDS = 10 * 60
 STATUS = {'started_at': time.time(), 'modem': None, 'modem_info': {}, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0,
           'gnss': {'assisted_mode': 'Not checked', 'assistance': 'Not checked', 'source_rate_hz': None, 'last_fresh_fix': None}}
@@ -248,6 +249,13 @@ def enable_gps(modem):
     with LOCK:
         STATUS['gnss'].update(assisted_mode=assisted_mode, assistance=assistance)
 
+def retry_xtra_assistance(modem):
+    capabilities, servers = location_capabilities(modem)
+    if 'xtra' not in capabilities or not servers: return
+    assistance = inject_xtra_assistance(modem, servers)
+    with LOCK:
+        STATUS['gnss']['assistance'] = assistance
+
 def parse_mmcli(text):
     values = {}
     for line in text.splitlines():
@@ -478,6 +486,8 @@ def elapsed(value):
 def tracking_loop():
     gps_enabled_for = None
     last_modem_poll = 0
+    last_xtra_retry = 0
+    xtra_retry_delay = XTRA_RETRY_SECONDS
     while True:
         try:
             config = load_config()
@@ -486,8 +496,14 @@ def tracking_loop():
                 time.sleep(2); continue
             modem = find_modem(config)
             if modem is None: raise RuntimeError('No ModemManager modem detected')
-            if modem != gps_enabled_for: enable_gps(modem); gps_enabled_for = modem
+            if modem != gps_enabled_for:
+                enable_gps(modem); gps_enabled_for = modem; last_xtra_retry = time.time(); xtra_retry_delay = XTRA_RETRY_SECONDS
             with LOCK: STATUS['modem'] = modem
+            with LOCK: assistance = STATUS['gnss'].get('assistance')
+            if assistance != 'XTRA injected' and time.time() - last_xtra_retry >= xtra_retry_delay:
+                retry_xtra_assistance(modem); last_xtra_retry = time.time()
+                with LOCK: assistance = STATUS['gnss'].get('assistance')
+                if assistance != 'XTRA injected': xtra_retry_delay = min(xtra_retry_delay * 2, 10 * 60)
             if time.time() - last_modem_poll >= 30:
                 info = modem_info(modem)
                 with LOCK: STATUS['modem_info'] = info
