@@ -23,7 +23,7 @@ const STAT_OPTIONS = [
   ['maxSpeed', 'Max speed', 'Highest speed in the current session'],
   ['avgSpeed', 'Avg speed', 'Average speed in the current session'],
   ['tripDistance', 'Trip distance', 'Distance calculated in the current session']
-  ,['location', 'Location', 'Nearest locality from the built-in Europe database']
+  ,['location', 'Location', 'Nearest locality from the built-in Europe database · data © GeoNames']
 ];
 
 const OverlaySettings = () => {
