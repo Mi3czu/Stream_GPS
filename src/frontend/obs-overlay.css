@@ -6,6 +6,7 @@
 }
 
 .obs-overlay { background: transparent; color: var(--overlay-text-color); margin: 0; min-height: 100vh; overflow: hidden; }
+.obs-overlay__content { display: flex; flex-direction: column; width: calc(var(--overlay-size) + 32px); }
 .obs-overlay__map { height: var(--overlay-size); margin: 16px; position: relative; width: var(--overlay-size); }
 .obs-overlay__map .gps-map { height: var(--overlay-size); width: var(--overlay-size); }
 .obs-overlay__map .leaflet-container { border: 3px solid var(--overlay-border); box-sizing: border-box; height: var(--overlay-size); overflow: hidden; width: var(--overlay-size); }
@@ -13,7 +14,9 @@
 .obs-overlay__map--round .gps-map { overflow: hidden; }
 .obs-overlay__credits { background: rgba(0, 0, 0, 0.46); border-radius: calc(var(--overlay-size) * .008); bottom: calc(var(--overlay-size) * .075); color: #e5edf7; font: 600 clamp(6px, calc(var(--overlay-size) * .022), 11px)/1.15 sans-serif; left: 50%; padding: calc(var(--overlay-size) * .005) calc(var(--overlay-size) * .012); position: absolute; text-shadow: 0 1px 2px #000; transform: translateX(-50%); white-space: nowrap; z-index: 500; }
 .obs-overlay__credits a { color: inherit; }
-.obs-overlay__stats { display: flex; flex-wrap: wrap; font: 600 var(--stats-text-size) var(--overlay-font); gap: 7px; margin: 0 16px 12px; max-width: min(760px, calc(100vw - 32px)); width: fit-content; }
+.obs-overlay__stats { display: flex; flex-wrap: wrap; font: 600 var(--stats-text-size) var(--overlay-font); gap: 7px; margin: 0 16px 12px; max-width: calc(100% - 32px); width: fit-content; }
+.obs-overlay__stats--left { align-self: flex-start; }.obs-overlay__stats--center { align-self: center; }.obs-overlay__stats--right { align-self: flex-end; }
+.obs-overlay__stats--map-width { justify-content: flex-start; width: calc(100% - 32px); }.obs-overlay__stats--map-width.obs-overlay__stats--center { justify-content: center; }.obs-overlay__stats--map-width.obs-overlay__stats--right { justify-content: flex-end; }
 .obs-overlay__stat { align-items: flex-start; backdrop-filter: blur(5px); background: rgba(5, 11, 20, .78); border: 1px solid rgba(255,255,255,.16); border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.32); display: flex; flex-direction: column; gap: 2px; min-width: 62px; padding: 6px 9px; text-shadow: 0 1px 2px #000; }
 .obs-overlay__stat strong { color: rgba(229,237,247,.72); font-size: .67em; letter-spacing: .06em; text-transform: uppercase; }
 .obs-overlay__stat b { color: #fff; font-size: 1em; line-height: 1.1; white-space: nowrap; }

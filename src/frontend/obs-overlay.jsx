@@ -120,19 +120,20 @@ const ObsOverlay = () => {
     ,config.stats.location && ['Location', device.locality]
   ].filter((item) => item && item[1]);
   const statsPanel = stats.length ? (
-    <section className={`obs-overlay__stats obs-overlay__stats--${config.statsLayout || 'cards'}`} style={{ '--stats-text-size': `${config.statsTextSize}px` }}>
+    <section className={`obs-overlay__stats obs-overlay__stats--${config.statsLayout || 'cards'} obs-overlay__stats--${config.statsAlign || 'left'} obs-overlay__stats--${config.statsWidth || 'natural'}`} style={{ '--stats-text-size': `${config.statsTextSize}px` }}>
       {stats.map(([label, value]) => <span className={label === 'Location' ? 'obs-overlay__stat obs-overlay__stat--location' : 'obs-overlay__stat'} key={label}><strong>{label}</strong><b>{value}</b></span>)}
     </section>
   ) : null;
 
   return (
-    <main className={`obs-overlay obs-overlay--${config.textTheme}`} style={{ '--overlay-text-color': config.textColor, '--overlay-font': config.fontFamily }}>
+    <main className={`obs-overlay obs-overlay--${config.textTheme}`} style={{ '--overlay-text-color': config.textColor, '--overlay-font': config.fontFamily }}><div className="obs-overlay__content" style={{ '--overlay-size': `${config.mapSize}px` }}>
       {config.statsPosition === 'above-map' && statsPanel}
-      <div className={`obs-overlay__map obs-overlay__map--${config.mapShape}`} style={{ '--overlay-size': `${config.mapSize}px`, '--overlay-border': config.borderColor }}>
+      <div className={`obs-overlay__map obs-overlay__map--${config.mapShape}`} style={{ '--overlay-border': config.borderColor }}>
         <GpsMap positions={mapPositions} mapTheme={config.mapTheme} size={config.mapSize} zoomConfig={config} zoomControl={false} attributionControl={false} mapOpacity={config.mapOpacity} connectPoints={config.trailDurationMinutes > 0} showHistoryMarkers={false} fadingTrail={config.trailDurationMinutes > 0} roundedCorners={config.mapRenderMode === 'rounded'} stationaryDriftCorrection={config.mapRenderMode === 'rounded'} followLatest />
         <small className="obs-overlay__credits">{mapAttributionLabel(config.mapTheme)}</small>
       </div>
       {config.statsPosition === 'below-map' && statsPanel}
+    </div>
     </main>
   );
 };

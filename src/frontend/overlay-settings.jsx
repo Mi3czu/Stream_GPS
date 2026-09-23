@@ -11,6 +11,8 @@ const OPTIONS = {
   mapShape: [['round', 'Round'], ['square', 'Square']],
   mapRenderMode: [['legacy', 'Legacy'], ['rounded', 'Rounded + drift correction (experimental)']],
   statsLayout: [['cards', 'Cards (recommended)'], ['compact', 'Compact line']],
+  statsAlign: [['left', 'Left'], ['center', 'Center'], ['right', 'Right']],
+  statsWidth: [['natural', 'Fit content'], ['map-width', 'Map width']],
   trailDurationMinutes: [[0, 'Off'], [1, 'Last 1 minute'], [5, 'Last 5 minutes'], [15, 'Last 15 minutes']]
 };
 
@@ -107,6 +109,8 @@ const OverlaySettings = () => {
       {choiceGroup('trailDurationMinutes', 'Fading route trail')}
       <p className="overlay-settings__hint">The trail is visible only in this OBS overlay. Older fragments fade out and it never exposes the full private route history.</p>
       {choiceGroup('statsLayout', 'Statistics layout')}
+      {choiceGroup('statsAlign', 'Align statistics')}
+      {choiceGroup('statsWidth', 'Statistics width')}
       <section className="overlay-settings__section">
         <h2>Map size: {config.mapSize}px</h2>
         <input type="range" min="200" max="600" step="10" value={config.mapSize} onChange={(event) => update('mapSize', Number(event.target.value))} />
