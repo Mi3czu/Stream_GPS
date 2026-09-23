@@ -149,11 +149,11 @@ const OverlaySettings = () => {
       <p className="overlay-settings__hint">Rounded mode smooths visible corners and stabilizes very-low-speed GPS drift only in this overlay. Legacy shows raw positions unchanged.</p>
       {choiceGroup('trailDurationMinutes', 'Fading route trail')}
       <p className="overlay-settings__hint">The trail is visible only in this OBS overlay. Older fragments fade out and it never exposes the full private route history.</p>
-      <section className="overlay-settings__section">
+      <section className="overlay-settings__section overlay-settings__legacy-map-control">
         <h2>Map size: {config.mapSize}px</h2>
         <input type="range" min="200" max="600" step="10" value={config.mapSize} onChange={(event) => update('mapSize', Number(event.target.value))} />
       </section>
-      <section className="overlay-settings__section">
+      <section className="overlay-settings__section overlay-settings__legacy-map-control">
         <h2>Map opacity: {config.mapOpacity}%</h2>
         <input type="range" min="10" max="100" step="5" value={config.mapOpacity} onChange={(event) => update('mapOpacity', Number(event.target.value))} />
         <p className="overlay-settings__hint">Only map tiles become transparent. The location marker, border and statistics remain clear in OBS.</p>
@@ -217,7 +217,7 @@ const OverlaySettings = () => {
             <strong>Telemetry HUD</strong><small>Toggle, drag or use arrows to set the order.</small>
             <div className="overlay-settings__stats">{telemetryRows}</div>
           </aside>
-          <div className="overlay-settings__scene-controls"><div><span>Style</span>{choiceButtons('statsLayout')}</div><div><span>Width</span>{choiceButtons('statsWidth')}</div><label>Text size: {config.statsTextSize}px<input type="range" min="10" max="28" value={config.statsTextSize} onChange={(event) => update('statsTextSize', Number(event.target.value))} /></label></div>
+          <div className="overlay-settings__scene-controls"><div><span>Style</span>{choiceButtons('statsLayout')}</div><div><span>Width</span>{choiceButtons('statsWidth')}</div><label>Text size: {config.statsTextSize}px<input type="range" min="10" max="28" value={config.statsTextSize} onChange={(event) => update('statsTextSize', Number(event.target.value))} /></label><label>Map size: {config.mapSize}px<input type="range" min="200" max="600" step="10" value={config.mapSize} onChange={(event) => update('mapSize', Number(event.target.value))} /></label><label>Map opacity: {config.mapOpacity}%<input type="range" min="10" max="100" step="5" value={config.mapOpacity} onChange={(event) => update('mapOpacity', Number(event.target.value))} /></label></div>
         </div>
       </section>
       <section className="overlay-settings__section overlay-settings__legacy-hud">
