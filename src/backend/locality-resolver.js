@@ -14,7 +14,8 @@ function distanceMeters(latA, lonA, latB, lonB) {
 }
 
 try {
-  const places = JSON.parse(fs.readFileSync(path.join(__dirname, 'localities', 'europe.json'), 'utf8'));
+  const source = fs.readFileSync(path.join(__dirname, 'localities', 'europe.json'), 'utf8').replace(/^\uFEFF/, '');
+  const places = JSON.parse(source);
   for (const place of places) { const bucketKey = key(place.lat, place.lon); const bucket = buckets.get(bucketKey) || []; bucket.push(place); buckets.set(bucketKey, bucket); }
   console.log(`Loaded ${places.length} European localities for OBS labels`);
 } catch (error) { console.warn(`Locality labels unavailable: ${error.message}`); }
