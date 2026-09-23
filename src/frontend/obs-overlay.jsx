@@ -117,6 +117,7 @@ const ObsOverlay = () => {
     config.stats.maxSpeed && ['Max speed', device.max_session_speed === null ? null : `${Math.round(device.max_session_speed)} km/h`],
     config.stats.avgSpeed && ['Avg speed', device.avg_session_speed === null ? null : `${Math.round(device.avg_session_speed)} km/h`],
     config.stats.tripDistance && ['Trip distance', device.trip_distance_m === null ? null : `${(device.trip_distance_m / 1000).toFixed(2)} km`]
+    ,config.stats.location && ['Location', device.locality]
   ].filter((item) => item && item[1]);
   const statsPanel = stats.length ? (
     <section className="obs-overlay__stats" style={{ '--stats-text-size': `${config.statsTextSize}px` }}>
