@@ -225,13 +225,30 @@ async function subscribeKickChatEvents(integration) {
 
 async function findActiveChatDevice(ownerId) {
   const result = await pool.query(
-    `SELECT id, device_id, name, last_speed, last_seen_at, public_share_id, public_share_enabled
-     FROM devices
-     WHERE owner_id = $1 AND status = 'active' AND last_seen_at >= NOW() - ($2 * INTERVAL '1 second')
-     ORDER BY last_seen_at DESC LIMIT 2`,
+    `SELECT d.id, d.device_id, d.name, d.last_speed, d.last_accuracy, d.last_satellites, d.last_seen_at,
+            d.public_share_id, d.public_share_enabled, session.distance_m AS trip_distance_m
+     FROM devices d
+     LEFT JOIN LATERAL (
+       SELECT distance_m FROM telemetry_sessions
+       WHERE device_id = d.id AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1
+     ) session ON TRUE
+     WHERE d.owner_id = $1 AND d.status = 'active' AND d.last_seen_at >= NOW() - ($2 * INTERVAL '1 second')
+     ORDER BY d.last_seen_at DESC LIMIT 2`,
     [ownerId, ACTIVE_CHAT_DEVICE_WINDOW_SECONDS]
   );
   return result.rows;
+}
+
+function chatGpsStatus(device) {
+  const details = [device.last_speed == null ? 'GPS fix active' : `${Number(device.last_speed).toFixed(1)} km/h`];
+  if (device.last_satellites != null) details.push(`${device.last_satellites} satellites`);
+  if (device.last_accuracy != null) details.push(`±${Math.round(Number(device.last_accuracy))} m`);
+  if (device.trip_distance_m != null) details.push(`trip ${(Number(device.trip_distance_m) / 1000).toFixed(2)} km`);
+  if (device.last_seen_at) {
+    const seconds = Math.max(0, Math.round((Date.now() - new Date(device.last_seen_at).getTime()) / 1000));
+    details.push(seconds < 2 ? 'updated now' : `updated ${seconds}s ago`);
+  }
+  return `${device.name}: ${details.join(' · ')}.`;
 }
 
 async function chatUserRole(integration, event) {
@@ -269,7 +286,7 @@ async function executeTwitchCommand(integration, device, rule) {
     if (!device.public_share_enabled || !device.public_share_id) return 'Live map sharing is currently off.';
     return `Live map: ${publicBaseUrl()}/map/${device.public_share_id}`;
   }
-  if (rule.action === 'gps_status') return `${device.name}: ${device.last_speed == null ? 'GPS connected' : `${Number(device.last_speed).toFixed(1)} km/h`}.`;
+  if (rule.action === 'gps_status') return chatGpsStatus(device);
   if (rule.action === 'private_mode') { await setChatSharing(device, false); return 'Viewer location sharing is now off.'; }
   if (rule.action === 'live_mode') { const sharing = await setChatSharing(device, true); return `Viewer location sharing is on: ${publicBaseUrl()}/map/${sharing.public_share_id}`; }
   if (rule.action === 'hide_overlay') { await setChatOverlayVisibility(device.id, false); return 'GPS overlay hidden.'; }
