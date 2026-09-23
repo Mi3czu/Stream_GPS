@@ -720,7 +720,7 @@ function validateOverlayConfig(input) {
       !Number.isInteger(Number(config.mapSize)) || Number(config.mapSize) < 200 || Number(config.mapSize) > 600 ||
       !Number.isInteger(mapOpacity) || mapOpacity < 10 || mapOpacity > 100 ||
       ![0, 1, 5, 15].includes(trailDurationMinutes) ||
-      !['legacy', 'rounded'].includes(config.mapRenderMode) || !['cards', 'compact'].includes(config.statsLayout) ||
+      !['legacy', 'rounded'].includes(config.mapRenderMode) || !['cards', 'compact', 'stack'].includes(config.statsLayout) ||
       !['left', 'center', 'right'].includes(config.statsAlign) || !['natural', 'map-width'].includes(config.statsWidth)) {
     return null;
   }

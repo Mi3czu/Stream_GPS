@@ -24,3 +24,4 @@
 .obs-overlay__stats--compact { background: rgba(5, 11, 20, .78); border: 1px solid rgba(255,255,255,.16); border-radius: 8px; gap: 10px; padding: 7px 10px; }
 .obs-overlay__stats--compact .obs-overlay__stat { backdrop-filter: none; background: transparent; border: 0; box-shadow: none; display: inline-flex; flex-direction: row; gap: 5px; min-width: 0; padding: 0; }
 .obs-overlay__stats--compact .obs-overlay__stat strong { font-size: 1em; letter-spacing: 0; text-transform: none; }
+.obs-overlay__stats--stack { flex-direction: column; flex-wrap: nowrap; }

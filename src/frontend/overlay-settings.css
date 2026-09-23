@@ -21,3 +21,18 @@
 .overlay-settings__stats small { color: #64748b; display: block; font-size: 0.75rem; margin-top: 2px; }
 .overlay-settings__stat-layout-controls { display: grid; gap: 14px; margin: 18px 0; }
 .overlay-settings__stat-layout-controls h3 { font-size: .9rem; margin: 0 0 8px; }
+.overlay-settings__layout-preview { background: #0f1b2d; border: 1px dashed #3b516e; border-radius: 8px; margin: 18px 0; padding: 12px; }
+.overlay-settings__layout-preview > strong { display: block; font-size: .9rem; margin-bottom: 10px; }
+.overlay-settings__layout-diagram { align-items: flex-start; display: flex; flex-direction: column; gap: 7px; max-width: 260px; }
+.overlay-settings__diagram-map { align-items: center; background: linear-gradient(135deg, #345e70, #1c334d); border: 1px solid #6a9abd; border-radius: 5px; color: #dceefe; display: flex; font-size: .75rem; height: 60px; justify-content: center; width: 100%; }
+.overlay-settings__diagram-stats { display: flex; flex-wrap: wrap; gap: 4px; width: fit-content; }
+.overlay-settings__diagram-stats i { background: #1d73d2; border-radius: 3px; color: #fff; font-size: .62rem; font-style: normal; padding: 4px 6px; }
+.overlay-settings__layout-diagram--above-map .overlay-settings__diagram-stats { order: -1; }
+.overlay-settings__layout-diagram--center { align-items: center; }
+.overlay-settings__layout-diagram--right { align-items: flex-end; }
+.overlay-settings__layout-diagram--map-width .overlay-settings__diagram-stats { width: 100%; }
+.overlay-settings__layout-diagram--map-width.overlay-settings__layout-diagram--center .overlay-settings__diagram-stats { justify-content: center; }
+.overlay-settings__layout-diagram--map-width.overlay-settings__layout-diagram--right .overlay-settings__diagram-stats { justify-content: flex-end; }
+.overlay-settings__layout-diagram--compact .overlay-settings__diagram-stats { background: #1d73d2; border-radius: 3px; gap: 0; padding: 1px; }
+.overlay-settings__layout-diagram--compact .overlay-settings__diagram-stats i { border-radius: 0; }
+.overlay-settings__layout-diagram--stack .overlay-settings__diagram-stats { flex-direction: column; }

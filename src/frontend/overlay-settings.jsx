@@ -10,9 +10,10 @@ const OPTIONS = {
   fontFamily: [['monospace', 'Standard (mono)'], ['Arial, sans-serif', 'Arial'], ['Roboto, sans-serif', 'Roboto'], ['Inter, sans-serif', 'Inter'], ['Oswald, sans-serif', 'Oswald']],
   mapShape: [['round', 'Round'], ['square', 'Square']],
   mapRenderMode: [['legacy', 'Legacy'], ['rounded', 'Rounded + drift correction (experimental)']],
-  statsLayout: [['cards', 'Cards (recommended)'], ['compact', 'Compact line']],
+  statsLayout: [['cards', 'Cards'], ['compact', 'Compact line'], ['stack', 'Vertical stack']],
   statsAlign: [['left', 'Left'], ['center', 'Center'], ['right', 'Right']],
   statsWidth: [['natural', 'Fit content'], ['map-width', 'Map width']],
+  statsPosition: [['above-map', 'Above map'], ['below-map', 'Below map']],
   trailDurationMinutes: [[0, 'Off'], [1, 'Last 1 minute'], [5, 'Last 5 minutes'], [15, 'Last 15 minutes']]
 };
 
@@ -179,13 +180,11 @@ const OverlaySettings = () => {
             </label>
           ))}
         </div>
-        <label>Statistics position
-          <select value={config.statsPosition} onChange={(event) => update('statsPosition', event.target.value)}>
-            <option value="below-map">Below map</option>
-            <option value="above-map">Above map</option>
-          </select>
-        </label>
         <div className="overlay-settings__stat-layout-controls">
+          <div>
+            <h3>Position</h3>
+            {choiceButtons('statsPosition')}
+          </div>
           <div>
             <h3>Style</h3>
             {choiceButtons('statsLayout')}
@@ -197,6 +196,13 @@ const OverlaySettings = () => {
           <div>
             <h3>Width</h3>
             {choiceButtons('statsWidth')}
+          </div>
+        </div>
+        <div className="overlay-settings__layout-preview">
+          <strong>Layout preview</strong>
+          <div className={`overlay-settings__layout-diagram overlay-settings__layout-diagram--${config.statsPosition} overlay-settings__layout-diagram--${config.statsAlign} overlay-settings__layout-diagram--${config.statsWidth} overlay-settings__layout-diagram--${config.statsLayout}`}>
+            <div className="overlay-settings__diagram-map">Map</div>
+            <div className="overlay-settings__diagram-stats"><i>Speed</i><i>Direction</i><i>Location</i></div>
           </div>
         </div>
         <label>Statistics text size: {config.statsTextSize}px
