@@ -24,6 +24,7 @@ const ADMIN_SESSION_HOURS = 8;
 const LOGIN_WINDOW_MINUTES = 15;
 const MAX_LOGIN_FAILURES = 5;
 const MAX_GPS_SPEED_KMH = 500;
+const MIN_TRIP_SPEED_KMH = 1.4;
 const MAX_GPS_PAST_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_GPS_FUTURE_MS = 5 * 60 * 1000;
 const PASSWORD_RESET_TTL_MINUTES = 30;
@@ -864,7 +865,9 @@ async function updateTelemetrySession(client, device, position) {
     session = created.rows[0];
   } else {
     const segmentDistance = haversineMeters(session.last_latitude, session.last_longitude, position.latitude, position.longitude);
-    const nextDistance = session.distance_m + segmentDistance;
+    // Preserve every position as the next baseline, but do not turn normal
+    // stationary GNSS drift into travelled distance.
+    const nextDistance = session.distance_m + (position.speed !== undefined && position.speed < MIN_TRIP_SPEED_KMH ? 0 : segmentDistance);
     const nextSamples = session.speed_samples + (position.speed === undefined ? 0 : 1);
     const nextSpeedSum = session.speed_sum + (position.speed ?? 0);
     const nextMaxSpeed = position.speed === undefined ? session.max_speed : Math.max(session.max_speed ?? 0, position.speed);
