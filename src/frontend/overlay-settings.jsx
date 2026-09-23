@@ -202,7 +202,9 @@ const OverlaySettings = () => {
                 <button type="button" className={config.statsPosition === 'below-map' ? 'is-selected' : ''} onClick={() => update('statsPosition', 'below-map')} aria-label="Place statistics below map" title="Place below map">&darr;</button>
               </div>
             </div>
-            <div className="overlay-settings__diagram-stats"><i>Speed</i><i>Direction</i><i>Location</i></div>
+            <div className="overlay-settings__diagram-stats">
+              {STAT_OPTIONS.filter(([field]) => config.stats[field]).map(([, label]) => <i key={label}>{label}</i>)}
+            </div>
           </div>
         </div>
         <label>Statistics text size: {config.statsTextSize}px

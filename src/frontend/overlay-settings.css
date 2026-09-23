@@ -42,7 +42,7 @@
 .overlay-settings__layout-diagram--stack.overlay-settings__layout-diagram--right .overlay-settings__diagram-stats { align-items: flex-end; }
 .overlay-settings__layout-diagram--map-width.overlay-settings__layout-diagram--center .overlay-settings__diagram-stats i { text-align: center; }
 .overlay-settings__layout-diagram--map-width.overlay-settings__layout-diagram--right .overlay-settings__diagram-stats i { text-align: right; }
-.overlay-settings__layout-move { display: grid; gap: 4px; grid-template-columns: repeat(3, 28px); grid-template-rows: repeat(3, 24px); position: absolute; right: 10px; top: 10px; width: max-content; }
+.overlay-settings__layout-move { display: grid; gap: 4px; grid-template-columns: repeat(3, 28px); grid-template-rows: repeat(3, 24px); left: 50%; position: absolute; top: 50%; transform: translate(-50%, -50%); width: max-content; }
 .overlay-settings__layout-move button { background: rgba(15, 27, 45, .94); border: 1px solid #7192b3; border-radius: 4px; color: #dbeafe; font-size: 1rem; line-height: 1; padding: 0; }
 .overlay-settings__layout-move button.is-selected { background: #1877df; border-color: #53a2ff; color: #fff; }
 .overlay-settings__layout-move button:nth-child(1) { grid-column: 2; grid-row: 1; }
