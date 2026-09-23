@@ -182,16 +182,8 @@ const OverlaySettings = () => {
         </div>
         <div className="overlay-settings__stat-layout-controls">
           <div>
-            <h3>Position</h3>
-            {choiceButtons('statsPosition')}
-          </div>
-          <div>
             <h3>Style</h3>
             {choiceButtons('statsLayout')}
-          </div>
-          <div>
-            <h3>Alignment</h3>
-            {choiceButtons('statsAlign')}
           </div>
           <div>
             <h3>Width</h3>
@@ -204,6 +196,14 @@ const OverlaySettings = () => {
             <div className="overlay-settings__diagram-map">Map</div>
             <div className="overlay-settings__diagram-stats"><i>Speed</i><i>Direction</i><i>Location</i></div>
           </div>
+          <div className="overlay-settings__layout-move" role="group" aria-label="Move statistics in the layout preview">
+            <button type="button" className={config.statsPosition === 'above-map' ? 'is-selected' : ''} onClick={() => update('statsPosition', 'above-map')} aria-label="Place statistics above map" title="Place above map">↑</button>
+            <button type="button" className={config.statsAlign === 'left' ? 'is-selected' : ''} onClick={() => update('statsAlign', 'left')} aria-label="Align statistics left" title="Align left">←</button>
+            <button type="button" className={config.statsAlign === 'center' ? 'is-selected' : ''} onClick={() => update('statsAlign', 'center')} aria-label="Center statistics" title="Center">•</button>
+            <button type="button" className={config.statsAlign === 'right' ? 'is-selected' : ''} onClick={() => update('statsAlign', 'right')} aria-label="Align statistics right" title="Align right">→</button>
+            <button type="button" className={config.statsPosition === 'below-map' ? 'is-selected' : ''} onClick={() => update('statsPosition', 'below-map')} aria-label="Place statistics below map" title="Place below map">↓</button>
+          </div>
+          <small className="overlay-settings__layout-help">Use the arrows to move statistics around the map.</small>
         </div>
         <label>Statistics text size: {config.statsTextSize}px
           <input type="range" min="10" max="28" value={config.statsTextSize} onChange={(event) => update('statsTextSize', Number(event.target.value))} />
