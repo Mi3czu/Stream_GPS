@@ -675,6 +675,8 @@ const DEFAULT_OVERLAY_CONFIG = {
   trailDurationMinutes: 0,
   mapRenderMode: 'legacy',
   statsLayout: 'cards',
+  statsAlign: 'left',
+  statsWidth: 'natural',
   stats: {
     speed: true,
     direction: true,
@@ -718,7 +720,8 @@ function validateOverlayConfig(input) {
       !Number.isInteger(Number(config.mapSize)) || Number(config.mapSize) < 200 || Number(config.mapSize) > 600 ||
       !Number.isInteger(mapOpacity) || mapOpacity < 10 || mapOpacity > 100 ||
       ![0, 1, 5, 15].includes(trailDurationMinutes) ||
-      !['legacy', 'rounded'].includes(config.mapRenderMode) || !['cards', 'compact'].includes(config.statsLayout)) {
+      !['legacy', 'rounded'].includes(config.mapRenderMode) || !['cards', 'compact'].includes(config.statsLayout) ||
+      !['left', 'center', 'right'].includes(config.statsAlign) || !['natural', 'map-width'].includes(config.statsWidth)) {
     return null;
   }
   if (typeof config.autoZoom !== 'boolean' || !Number.isInteger(minSpeed) || !Number.isInteger(maxSpeed) ||
@@ -728,7 +731,7 @@ function validateOverlayConfig(input) {
   if (!statNames.every((name) => typeof config.stats[name] === 'boolean') ||
       !['above-map', 'below-map'].includes(config.statsPosition) ||
       !Number.isInteger(Number(config.statsTextSize)) || Number(config.statsTextSize) < 10 || Number(config.statsTextSize) > 28) return null;
-  return { ...config, mapSize: Number(config.mapSize), mapOpacity, minSpeed, maxSpeed, minZoom, maxZoom, trailDurationMinutes, mapRenderMode: config.mapRenderMode, statsLayout: config.statsLayout, statsTextSize: Number(config.statsTextSize) };
+  return { ...config, mapSize: Number(config.mapSize), mapOpacity, minSpeed, maxSpeed, minZoom, maxZoom, trailDurationMinutes, mapRenderMode: config.mapRenderMode, statsLayout: config.statsLayout, statsAlign: config.statsAlign, statsWidth: config.statsWidth, statsTextSize: Number(config.statsTextSize) };
 }
 
 function writeSse(response, event, data) {
