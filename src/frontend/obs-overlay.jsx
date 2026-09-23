@@ -120,8 +120,8 @@ const ObsOverlay = () => {
     ,config.stats.location && ['Location', device.locality]
   ].filter((item) => item && item[1]);
   const statsPanel = stats.length ? (
-    <section className="obs-overlay__stats" style={{ '--stats-text-size': `${config.statsTextSize}px` }}>
-      {stats.map(([label, value]) => <span key={label}><strong>{label}</strong> {value}</span>)}
+    <section className={`obs-overlay__stats obs-overlay__stats--${config.statsLayout || 'cards'}`} style={{ '--stats-text-size': `${config.statsTextSize}px` }}>
+      {stats.map(([label, value]) => <span className={label === 'Location' ? 'obs-overlay__stat obs-overlay__stat--location' : 'obs-overlay__stat'} key={label}><strong>{label}</strong><b>{value}</b></span>)}
     </section>
   ) : null;
 

@@ -10,6 +10,7 @@ const OPTIONS = {
   fontFamily: [['monospace', 'Standard (mono)'], ['Arial, sans-serif', 'Arial'], ['Roboto, sans-serif', 'Roboto'], ['Inter, sans-serif', 'Inter'], ['Oswald, sans-serif', 'Oswald']],
   mapShape: [['round', 'Round'], ['square', 'Square']],
   mapRenderMode: [['legacy', 'Legacy'], ['rounded', 'Rounded + drift correction (experimental)']],
+  statsLayout: [['cards', 'Cards (recommended)'], ['compact', 'Compact line']],
   trailDurationMinutes: [[0, 'Off'], [1, 'Last 1 minute'], [5, 'Last 5 minutes'], [15, 'Last 15 minutes']]
 };
 
@@ -105,6 +106,7 @@ const OverlaySettings = () => {
       <p className="overlay-settings__hint">Rounded mode smooths visible corners and stabilizes very-low-speed GPS drift only in this overlay. Legacy shows raw positions unchanged.</p>
       {choiceGroup('trailDurationMinutes', 'Fading route trail')}
       <p className="overlay-settings__hint">The trail is visible only in this OBS overlay. Older fragments fade out and it never exposes the full private route history.</p>
+      {choiceGroup('statsLayout', 'Statistics layout')}
       <section className="overlay-settings__section">
         <h2>Map size: {config.mapSize}px</h2>
         <input type="range" min="200" max="600" step="10" value={config.mapSize} onChange={(event) => update('mapSize', Number(event.target.value))} />
