@@ -31,13 +31,17 @@
 .overlay-settings__layout-diagram--center { align-items: center; }
 .overlay-settings__layout-diagram--right { align-items: flex-end; }
 .overlay-settings__layout-diagram--map-width .overlay-settings__diagram-stats { width: 100%; }
+.overlay-settings__layout-diagram--map-width:not(.overlay-settings__layout-diagram--compact):not(.overlay-settings__layout-diagram--stack) .overlay-settings__diagram-stats i { flex: 1 1 0; }
 .overlay-settings__layout-diagram--map-width.overlay-settings__layout-diagram--center .overlay-settings__diagram-stats { justify-content: center; }
 .overlay-settings__layout-diagram--map-width.overlay-settings__layout-diagram--right .overlay-settings__diagram-stats { justify-content: flex-end; }
 .overlay-settings__layout-diagram--compact .overlay-settings__diagram-stats { background: rgba(5, 11, 20, .88); border: 1px solid rgba(190, 215, 244, .35); border-radius: 4px; gap: 4px; padding: 4px 6px; }
 .overlay-settings__layout-diagram--compact .overlay-settings__diagram-stats i { background: transparent; border: 0; border-radius: 0; padding: 0; }
 .overlay-settings__layout-diagram--stack .overlay-settings__diagram-stats { align-items: flex-start; flex-direction: column; }
+.overlay-settings__layout-diagram--map-width.overlay-settings__layout-diagram--stack .overlay-settings__diagram-stats i { align-self: stretch; }
 .overlay-settings__layout-diagram--stack.overlay-settings__layout-diagram--center .overlay-settings__diagram-stats { align-items: center; }
 .overlay-settings__layout-diagram--stack.overlay-settings__layout-diagram--right .overlay-settings__diagram-stats { align-items: flex-end; }
+.overlay-settings__layout-diagram--map-width.overlay-settings__layout-diagram--center .overlay-settings__diagram-stats i { text-align: center; }
+.overlay-settings__layout-diagram--map-width.overlay-settings__layout-diagram--right .overlay-settings__diagram-stats i { text-align: right; }
 .overlay-settings__layout-move { display: grid; gap: 4px; grid-template-columns: repeat(3, 28px); grid-template-rows: repeat(3, 24px); position: absolute; right: 10px; top: 10px; width: max-content; }
 .overlay-settings__layout-move button { background: rgba(15, 27, 45, .94); border: 1px solid #7192b3; border-radius: 4px; color: #dbeafe; font-size: 1rem; line-height: 1; padding: 0; }
 .overlay-settings__layout-move button.is-selected { background: #1877df; border-color: #53a2ff; color: #fff; }
