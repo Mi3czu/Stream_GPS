@@ -36,3 +36,5 @@
 .overlay-settings__layout-diagram--compact .overlay-settings__diagram-stats { background: #1d73d2; border-radius: 3px; gap: 0; padding: 1px; }
 .overlay-settings__layout-diagram--compact .overlay-settings__diagram-stats i { border-radius: 0; }
 .overlay-settings__layout-diagram--stack .overlay-settings__diagram-stats { flex-direction: column; }
+.overlay-settings__layout-diagram--stack.overlay-settings__layout-diagram--center .overlay-settings__diagram-stats { align-items: center; }
+.overlay-settings__layout-diagram--stack.overlay-settings__layout-diagram--right .overlay-settings__diagram-stats { align-items: flex-end; }
