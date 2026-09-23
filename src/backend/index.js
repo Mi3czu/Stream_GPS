@@ -10,6 +10,7 @@ const { pool } = require('./database/postgres');
 const { authenticate } = require('./auth');
 const { authenticateDevice, invalidateDeviceAuth, sendError } = require('./device-auth');
 const { simplifyRoute } = require('./route-simplify');
+const { resolveLocality } = require('./locality-resolver');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -682,7 +683,8 @@ const DEFAULT_OVERLAY_CONFIG = {
     localTime: true,
     maxSpeed: false,
     avgSpeed: false,
-    tripDistance: false
+    tripDistance: false,
+    location: false
   },
   statsPosition: 'below-map',
   statsTextSize: 14
@@ -814,7 +816,7 @@ function overlayDeviceData(overlay) {
     last_seen_at: overlay.last_seen_at, latitude: overlay.last_latitude,
     longitude: overlay.last_longitude, speed: overlay.last_speed,
     heading: overlay.last_heading, altitude: overlay.last_altitude,
-    accuracy: overlay.last_accuracy, satellites: overlay.last_satellites,
+    accuracy: overlay.last_accuracy, satellites: overlay.last_satellites, locality: resolveLocality(overlay.last_latitude, overlay.last_longitude),
     recorded_at: overlay.last_recorded_at, trip_distance_m: overlay.trip_distance_m,
     max_session_speed: overlay.max_session_speed, avg_session_speed: overlay.avg_session_speed
   };
@@ -889,7 +891,7 @@ async function publishDevicePosition(device, position, sessionMetrics) {
     last_seen_at: new Date().toISOString(), latitude: position.latitude,
     longitude: position.longitude, speed: position.speed ?? null,
     heading: position.heading ?? null, altitude: position.altitude ?? null,
-    accuracy: position.accuracy ?? null, satellites: position.satellites ?? null,
+    accuracy: position.accuracy ?? null, satellites: position.satellites ?? null, locality: resolveLocality(position.latitude, position.longitude),
     recorded_at: position.recordedAt.toISOString(), ...sessionMetrics
   };
   publishDeviceEvent(device.id, 'position', { device: payload });
