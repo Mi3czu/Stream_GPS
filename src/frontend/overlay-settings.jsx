@@ -190,7 +190,7 @@ const OverlaySettings = () => {
             {choiceButtons('statsWidth')}
           </div>
         </div>
-        <div className="overlay-settings__layout-preview">
+        <div className="overlay-settings__layout-preview" style={{ '--preview-stats-text-size': `${Math.max(8, Math.round(config.statsTextSize * 0.7))}px` }}>
           <strong>Layout preview</strong>
           <div className={`overlay-settings__layout-diagram overlay-settings__layout-diagram--${config.statsPosition} overlay-settings__layout-diagram--${config.statsAlign} overlay-settings__layout-diagram--${config.statsWidth} overlay-settings__layout-diagram--${config.statsLayout}`}>
             <div className="overlay-settings__diagram-map">Map
