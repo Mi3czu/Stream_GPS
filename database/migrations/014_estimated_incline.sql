@@ -1,0 +1,7 @@
+ALTER TABLE devices
+  ADD COLUMN IF NOT EXISTS last_incline DOUBLE PRECISION
+  CHECK (last_incline IS NULL OR last_incline BETWEEN -25 AND 25);
+
+ALTER TABLE gps_positions
+  ADD COLUMN IF NOT EXISTS incline DOUBLE PRECISION
+  CHECK (incline IS NULL OR incline BETWEEN -25 AND 25);

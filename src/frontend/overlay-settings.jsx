@@ -21,6 +21,7 @@ const STAT_OPTIONS = [
   ['speed', 'Speed', 'Current GPS speed'],
   ['direction', 'Direction', 'Compass direction from GPS heading'],
   ['altitude', 'Altitude', 'Meters above sea level'],
+  ['incline', 'Incline (beta)', 'Adaptive GNSS altitude estimate over 50–120 m'],
   ['accuracy', 'Accuracy', 'GPS accuracy in meters (estimated from HDOP when needed)'],
   ['gpsSignal', 'GPS signal', 'Number of satellites'],
   ['localTime', 'Local time', 'Time in the browser timezone'],

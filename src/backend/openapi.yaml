@@ -326,6 +326,7 @@ components:
         latitude: { type: number, minimum: -90, maximum: 90 }
         longitude: { type: number, minimum: -180, maximum: 180 }
         altitude: { type: number }
+        incline: { type: number, minimum: -25, maximum: 25, description: Estimated road grade in percent }
         speed: { type: number, minimum: 0, description: Kilometres per hour }
         heading: { type: number, minimum: 0, exclusiveMaximum: 360 }
         accuracy: { type: number, minimum: 0, description: Metres }

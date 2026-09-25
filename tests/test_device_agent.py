@@ -44,4 +44,17 @@ modem.location.gps.satellites : '9'""")
                 self.assertEqual([item['latitude'] for item in AGENT.queue_items()], [2])
         finally: AGENT.QUEUE_PATH = original
 
+    def test_estimated_incline_uses_adaptive_distance_profile(self):
+        AGENT.INCLINE_SAMPLES = []; AGENT.INCLINE_DISTANCE_METERS = 0.0
+        AGENT.INCLINE_LAST_POINT = None; AGENT.INCLINE_LAST_SAMPLE_DISTANCE = 0.0
+        longitude_step = 8 / (111320 * __import__('math').cos(__import__('math').radians(51.9)))
+        position = None
+        for index in range(9):
+            position = {'latitude': 51.9, 'longitude': 15.5 + index * longitude_step,
+                        'altitude': 100 + index * 0.16, 'speed': 4}
+            AGENT.update_estimated_incline(position)
+        self.assertAlmostEqual(position['incline'], 2.0, delta=0.4)
+        AGENT.update_estimated_incline({'latitude': 51.9, 'longitude': 15.501, 'altitude': 102, 'speed': 0})
+        self.assertEqual(AGENT.INCLINE_SAMPLES, [])
+
 if __name__ == '__main__': unittest.main()

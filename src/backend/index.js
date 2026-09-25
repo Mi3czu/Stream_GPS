@@ -696,11 +696,12 @@ const DEFAULT_OVERLAY_CONFIG = {
   statsAlign: 'left',
   statsWidth: 'natural',
   hudAnchor: 'bottom-left',
-  statsOrder: ['speed', 'direction', 'altitude', 'accuracy', 'gpsSignal', 'localTime', 'maxSpeed', 'avgSpeed', 'tripDistance', 'location'],
+  statsOrder: ['speed', 'direction', 'altitude', 'incline', 'accuracy', 'gpsSignal', 'localTime', 'maxSpeed', 'avgSpeed', 'tripDistance', 'location'],
   stats: {
     speed: true,
     direction: true,
     altitude: false,
+    incline: false,
     accuracy: false,
     gpsSignal: false,
     localTime: true,
@@ -800,7 +801,7 @@ async function getPublicMapDevice(shareId) {
   if (cached) return cached;
   const result = await pool.query(
     `SELECT id, name, status, last_seen_at, last_latitude, last_longitude,
-            last_altitude, last_speed, last_heading, last_accuracy,
+            last_altitude, last_incline, last_speed, last_heading, last_accuracy,
             last_satellites, last_recorded_at
      FROM devices WHERE public_share_id = $1 AND public_share_enabled = TRUE AND status = 'active'`,
     [shareId]
@@ -821,7 +822,7 @@ function escapeXml(value) {
 async function getOverlayForPublicAccess(overlayId, accessKey) {
   const result = await pool.query(
     `SELECT o.id, o.access_key_hash, o.access_key_encrypted, o.config, o.visible, d.id AS device_db_id, d.name, d.device_id, d.status, d.last_seen_at,
-            d.last_latitude, d.last_longitude, d.last_speed, d.last_heading, d.last_altitude,
+            d.last_latitude, d.last_longitude, d.last_speed, d.last_heading, d.last_altitude, d.last_incline,
             d.last_accuracy, d.last_satellites, d.last_recorded_at,
             session.distance_m AS trip_distance_m, session.max_speed AS max_session_speed,
             CASE WHEN session.speed_samples > 0 THEN session.speed_sum / session.speed_samples END AS avg_session_speed
@@ -846,7 +847,7 @@ function overlayDeviceData(overlay) {
     name: overlay.name, device_id: overlay.device_id, status: overlay.status,
     last_seen_at: overlay.last_seen_at, latitude: overlay.last_latitude,
     longitude: overlay.last_longitude, speed: overlay.last_speed,
-    heading: overlay.last_heading, altitude: overlay.last_altitude,
+    heading: overlay.last_heading, altitude: overlay.last_altitude, incline: overlay.last_incline,
     accuracy: overlay.last_accuracy, satellites: overlay.last_satellites, locality: resolveLocality(overlay.last_latitude, overlay.last_longitude),
     recorded_at: overlay.last_recorded_at, trip_distance_m: overlay.trip_distance_m,
     max_session_speed: overlay.max_session_speed, avg_session_speed: overlay.avg_session_speed
@@ -923,7 +924,7 @@ async function publishDevicePosition(device, position, sessionMetrics) {
     name: device.name, device_id: device.device_id, status: 'active',
     last_seen_at: new Date().toISOString(), latitude: position.latitude,
     longitude: position.longitude, speed: position.speed ?? null,
-    heading: position.heading ?? null, altitude: position.altitude ?? null,
+    heading: position.heading ?? null, altitude: position.altitude ?? null, incline: position.incline ?? null,
     accuracy: position.accuracy ?? null, satellites: position.satellites ?? null, locality: resolveLocality(position.latitude, position.longitude),
     recorded_at: position.recordedAt.toISOString(), ...sessionMetrics
   };
@@ -968,7 +969,7 @@ nonceCleanupTimer.unref();
 function validateGpsPosition(body) {
   const latitude = Number(body.latitude);
   const longitude = Number(body.longitude);
-  const optionalNumbers = ['altitude', 'speed', 'heading', 'accuracy'];
+  const optionalNumbers = ['altitude', 'speed', 'heading', 'accuracy', 'incline'];
   const position = { latitude, longitude };
 
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
@@ -997,6 +998,9 @@ function validateGpsPosition(body) {
   }
   if (position.accuracy !== undefined && position.accuracy < 0) {
     return { error: 'INVALID_ACCURACY', message: 'accuracy cannot be negative' };
+  }
+  if (position.incline !== undefined && (position.incline < -25 || position.incline > 25)) {
+    return { error: 'INVALID_INCLINE', message: 'incline must be between -25 and 25 percent' };
   }
 
   if (body.satellites !== undefined && body.satellites !== null) {
@@ -1031,7 +1035,7 @@ app.get('/health', async (req, res) => {
 app.get('/ready', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = '013_password_reset_tokens.sql') AS migrations_ready`
+      `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = '014_estimated_incline.sql') AS migrations_ready`
     );
     if (!result.rows[0].migrations_ready) return res.status(503).json({ status: 'not_ready', database: 'ok', migrations: 'pending' });
     res.json({ status: 'ready', database: 'ok', migrations: 'ok' });
@@ -1403,7 +1407,7 @@ app.get('/api/v1/devices', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, device_id, name, status, created_at, last_seen_at,
-              last_latitude, last_longitude, last_altitude, last_speed,
+              last_latitude, last_longitude, last_altitude, last_incline, last_speed,
               last_heading, last_accuracy, last_satellites, last_recorded_at
        FROM devices
        WHERE owner_id = $1
@@ -1421,7 +1425,7 @@ app.get('/api/v1/devices/:deviceId', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, device_id, name, status, created_at, updated_at, last_seen_at,
-              last_latitude, last_longitude, last_altitude, last_speed,
+              last_latitude, last_longitude, last_altitude, last_incline, last_speed,
               last_heading, last_accuracy, last_satellites, last_recorded_at,
               public_share_id, public_share_enabled, public_share_updated_at
        FROM devices
@@ -1605,7 +1609,7 @@ app.get('/api/v1/devices/:deviceId/location', authenticate, async (req, res) => 
   try {
     const result = await pool.query(
       `SELECT device_id, name, status, last_seen_at, last_latitude, last_longitude,
-              last_altitude, last_speed, last_heading, last_accuracy,
+              last_altitude, last_incline, last_speed, last_heading, last_accuracy,
               last_satellites, last_recorded_at
        FROM devices WHERE device_id = $1 AND owner_id = $2`,
       [req.params.deviceId, req.user.sub]
@@ -1725,7 +1729,7 @@ app.delete('/api/v1/devices/:deviceId/history', authenticate, async (req, res) =
     );
     await pool.query(
       `UPDATE devices SET last_seen_at = NULL, last_latitude = NULL, last_longitude = NULL,
-       last_altitude = NULL, last_speed = NULL, last_heading = NULL, last_accuracy = NULL,
+       last_altitude = NULL, last_incline = NULL, last_speed = NULL, last_heading = NULL, last_accuracy = NULL,
        last_satellites = NULL, last_recorded_at = NULL, updated_at = NOW()
        WHERE device_id = $1 AND owner_id = $2`,
       [req.params.deviceId, req.user.sub]
@@ -1759,7 +1763,7 @@ app.get('/api/v1/devices/:deviceId/live', async (req, res) => {
     if (payload.type !== 'device-live') throw new Error('Wrong token type');
     const result = await pool.query(
       `SELECT id, device_id, name, status, last_seen_at, last_latitude, last_longitude,
-              last_altitude, last_speed, last_heading, last_accuracy, last_satellites, last_recorded_at
+              last_altitude, last_incline, last_speed, last_heading, last_accuracy, last_satellites, last_recorded_at
        FROM devices WHERE id = $1 AND device_id = $2 AND owner_id = $3`,
       [payload.deviceDbId, req.params.deviceId, payload.sub]
     );
@@ -2139,22 +2143,22 @@ app.post('/api/v1/gps/update', authenticateDevice, async (req, res) => {
     );
     await client.query(
       `INSERT INTO gps_positions
-       (device_id, latitude, longitude, altitude, speed, heading, accuracy, satellites, recorded_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+       (device_id, latitude, longitude, altitude, speed, heading, accuracy, satellites, incline, recorded_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [req.device.id, position.latitude, position.longitude, position.altitude ?? null,
         position.speed ?? null, position.heading ?? null, position.accuracy ?? null,
-        position.satellites ?? null, position.recordedAt]
+        position.satellites ?? null, position.incline ?? null, position.recordedAt]
     );
     const sessionMetrics = await updateTelemetrySession(client, req.device, position);
     await client.query(
       `UPDATE devices SET last_seen_at = NOW(), updated_at = NOW(),
        last_latitude = $2, last_longitude = $3, last_altitude = $4, last_speed = $5,
-       last_heading = $6, last_accuracy = $7, last_satellites = $8, last_recorded_at = $9,
-       device_key_encrypted = COALESCE(device_key_encrypted, $10)
+       last_heading = $6, last_accuracy = $7, last_satellites = $8, last_incline = $9, last_recorded_at = $10,
+       device_key_encrypted = COALESCE(device_key_encrypted, $11)
        WHERE id = $1`,
       [req.device.id, position.latitude, position.longitude, position.altitude ?? null,
         position.speed ?? null, position.heading ?? null, position.accuracy ?? null,
-        position.satellites ?? null, position.recordedAt, encryptSecret(req.deviceKey)]
+        position.satellites ?? null, position.incline ?? null, position.recordedAt, encryptSecret(req.deviceKey)]
     );
     await client.query('COMMIT');
     res.status(201).json({ status: 'accepted', recorded_at: position.recordedAt.toISOString() });

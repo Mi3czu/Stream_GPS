@@ -111,6 +111,7 @@ const ObsOverlay = () => {
     speed: config.stats.speed && ['Speed', device.speed === null ? null : `${Math.round(device.speed)} km/h`],
     direction: config.stats.direction && ['Direction', compassDirection(device.heading)],
     altitude: config.stats.altitude && ['Altitude', device.altitude === null ? null : `${Math.round(device.altitude)} m`],
+    incline: config.stats.incline && ['Incline', device.incline == null ? null : `${Number(device.incline).toFixed(1)}%`],
     accuracy: config.stats.accuracy && ['Accuracy', device.accuracy === null ? null : `${Math.round(device.accuracy)} m`],
     gpsSignal: config.stats.gpsSignal && ['GPS', device.satellites === null ? null : `${device.satellites} satellites`],
     localTime: config.stats.localTime && ['Local time', new Date().toLocaleTimeString()],

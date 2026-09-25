@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Standalone Stream GPS agent. It does not import or modify BelaUI."""
 
-import argparse, base64, hashlib, hmac, html, json, os, re, secrets, shutil, subprocess, tempfile, threading, time, urllib.error, urllib.request, uuid
+import argparse, base64, hashlib, hmac, html, json, math, os, re, secrets, shutil, statistics, subprocess, tempfile, threading, time, urllib.error, urllib.request, uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,6 +23,10 @@ GITHUB_HEAD_API = 'https://api.github.com/repos/Mi3czu/Stream_GPS/commits/main'
 UPDATE_FILES = ('stream_gps_agent.py', 'stream-gps-device', 'stream-gps-device.service', 'VERSION')
 CPU_SAMPLE = None
 GNSS_RATE_SAMPLES = []
+INCLINE_SAMPLES = []
+INCLINE_DISTANCE_METERS = 0.0
+INCLINE_LAST_POINT = None
+INCLINE_LAST_SAMPLE_DISTANCE = 0.0
 
 def load_config():
     with CONFIG_PATH.open(encoding='utf-8') as handle: return json.load(handle)
@@ -337,6 +341,53 @@ def update_gnss_metrics(position):
                     gnss['source_rate_hz'] = round(len(GNSS_RATE_SAMPLES) / sum(GNSS_RATE_SAMPLES), 1)
             gnss.update(source_time=source_time, last_fresh_fix=now)
 
+def horizontal_distance_meters(first, second):
+    latitude_a, longitude_a = map(math.radians, first)
+    latitude_b, longitude_b = map(math.radians, second)
+    delta_latitude = latitude_b - latitude_a; delta_longitude = longitude_b - longitude_a
+    value = math.sin(delta_latitude / 2) ** 2 + math.cos(latitude_a) * math.cos(latitude_b) * math.sin(delta_longitude / 2) ** 2
+    return 6_371_000 * 2 * math.atan2(math.sqrt(value), math.sqrt(1 - value))
+
+def incline_window_meters(speed):
+    if speed < 7: return 50
+    if speed < 25: return 80
+    return 120
+
+def update_estimated_incline(position):
+    """Attach a conservative grade estimate from a distance-based altitude profile."""
+    global INCLINE_SAMPLES, INCLINE_DISTANCE_METERS, INCLINE_LAST_POINT, INCLINE_LAST_SAMPLE_DISTANCE
+    position['incline'] = None
+    try:
+        point = (float(position['latitude']), float(position['longitude']))
+        altitude = float(position['altitude']); speed = float(position.get('speed') or 0)
+    except (KeyError, TypeError, ValueError): return
+    if not all(math.isfinite(value) for value in (*point, altitude, speed)) or speed < 1.4:
+        INCLINE_SAMPLES = []; INCLINE_DISTANCE_METERS = 0.0; INCLINE_LAST_POINT = None; INCLINE_LAST_SAMPLE_DISTANCE = 0.0
+        return
+    if INCLINE_LAST_POINT is None:
+        INCLINE_LAST_POINT = point; INCLINE_SAMPLES = [(0.0, altitude)]; return
+    segment = horizontal_distance_meters(INCLINE_LAST_POINT, point); INCLINE_LAST_POINT = point
+    if segment < 1 or segment > 80: return
+    INCLINE_DISTANCE_METERS += segment
+    if INCLINE_DISTANCE_METERS - INCLINE_LAST_SAMPLE_DISTANCE < 8: return
+    INCLINE_LAST_SAMPLE_DISTANCE = INCLINE_DISTANCE_METERS
+    recent_altitudes = [sample[1] for sample in INCLINE_SAMPLES[-8:]]
+    if recent_altitudes and abs(altitude - statistics.median(recent_altitudes)) > 15: return
+    INCLINE_SAMPLES.append((INCLINE_DISTANCE_METERS, altitude))
+    window = incline_window_meters(speed); cutoff = INCLINE_DISTANCE_METERS - window
+    INCLINE_SAMPLES = [sample for sample in INCLINE_SAMPLES if sample[0] >= cutoff]
+    bins = {}
+    for distance, sample_altitude in INCLINE_SAMPLES:
+        bins.setdefault(int(distance // 16), []).append((distance, sample_altitude))
+    profile = [(statistics.median(item[0] for item in values), statistics.median(item[1] for item in values)) for values in bins.values()]
+    profile.sort()
+    if len(profile) < 4 or profile[-1][0] - profile[0][0] < min(40, window * 0.7): return
+    mean_distance = statistics.mean(item[0] for item in profile); mean_altitude = statistics.mean(item[1] for item in profile)
+    divisor = sum((distance - mean_distance) ** 2 for distance, _ in profile)
+    if divisor <= 0: return
+    grade = 100 * sum((distance - mean_distance) * (sample_altitude - mean_altitude) for distance, sample_altitude in profile) / divisor
+    if abs(grade) <= 25: position['incline'] = round(grade, 1)
+
 def queue_items():
     if not QUEUE_PATH.exists(): return []
     cutoff = time.time() - 86400
@@ -513,6 +564,7 @@ def tracking_loop():
                 with LOCK: STATUS['gps_fix'] = False; STATUS['last_error'] = 'Waiting for GPS fix'
                 time.sleep(max(2, int(config.get('interval_seconds', 2)))); continue
             update_gnss_metrics(position)
+            update_estimated_incline(position)
             with LOCK: STATUS['gps_fix'] = True; STATUS['last_position'] = position; STATUS['last_error'] = None
             pending = queue_items(); pending.append(dict(position, _queued_at=time.time()))
             remaining = []
@@ -569,6 +621,8 @@ class Handler(BaseHTTPRequestHandler):
         signal_text = f'{signal}%' if signal is not None else 'Not available'
         satellites = (status.get('last_position') or {}).get('satellites')
         satellites_text = str(satellites) if satellites is not None else 'Not available'
+        incline = (status.get('last_position') or {}).get('incline')
+        incline_text = f'{float(incline):+.1f}%' if incline is not None else 'Measuring'
         gnss = status.get('gnss') or {}
         source_rate = gnss.get('source_rate_hz')
         source_rate_text = f'{source_rate:g} Hz' if source_rate is not None else 'Measuring'
@@ -617,7 +671,7 @@ class Handler(BaseHTTPRequestHandler):
         error_html = f'<p class="status-error"><b>Attention:</b> {html.escape(str(error))}</p>' if error and error != 'Waiting for GPS fix' else ''
         error_html = (f'<p><b>GNSS diagnostics:</b> {html.escape(source_rate_text)} · {html.escape(source_hint)}'
                       f'<br><small>A-GPS: {html.escape(assisted_hint)}</small></p>') + error_html
-        return f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS Device</title><style>body{{background:#0b1120;color:#e5edf7;font:16px system-ui;margin:0;padding:24px}}main{{margin:auto;max-width:860px}}section,details{{background:#121b2b;border:1px solid #28364b;border-radius:14px;margin:14px 0;padding:18px}}h1,h2,p{{margin-top:0}}h1{{font-size:1.55rem;margin-bottom:4px}}h2{{font-size:1.05rem;margin-bottom:8px}}p,small{{color:#aab9cc}}button{{background:#1f6feb;border:0;border-radius:8px;color:white;cursor:pointer;font:inherit;font-weight:700;padding:9px 13px}}button.secondary{{background:#28364b}}input{{background:#0f1726;border:1px solid #44536a;border-radius:8px;box-sizing:border-box;color:white;margin:5px 0 14px;padding:10px;width:100%}}.top{{align-items:center;display:flex;gap:16px;justify-content:space-between}}.top p{{margin:0}}.health,.modem-grid,.system-grid{{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:16px}}.health-card,.metric,.modem-grid div{{background:#0f1726;border:1px solid #28364b;border-radius:10px;padding:12px}}.health-card span,.metric span,.modem-grid span{{color:#93a5bd;display:block;font-size:.75rem;font-weight:700;text-transform:uppercase}}.health-card b,.metric b,.modem-grid b{{display:block;font-size:1rem;margin:6px 0 3px;overflow-wrap:anywhere}}.health-card small,.metric small{{font-size:.76rem}}.good{{color:#35d39a}}.warn{{color:#fbbf24}}.bad{{color:#f97066}}.status-error{{background:#3b2028;border:1px solid #71333d;border-radius:9px;color:#ffd1cc;margin:14px 0 0;padding:10px 12px}}details{{padding:0}}summary{{align-items:center;cursor:pointer;display:flex;justify-content:space-between;list-style:none;padding:18px}}summary::-webkit-details-marker{{display:none}}summary small{{margin-left:auto;margin-right:12px}}details>div{{border-top:1px solid #28364b;padding:18px}}.key-row{{display:flex;gap:8px}}.key-row input{{margin-bottom:14px}}.key-row button{{height:42px;margin-top:5px;white-space:nowrap}}code{{overflow-wrap:anywhere}}@media(max-width:650px){{body{{padding:14px}}.top{{align-items:flex-start;flex-direction:column}}.health,.modem-grid,.system-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}</style></head><body><main><header class="top"><div><h1>Stream GPS Device</h1><p>Live health, modem and system status.</p></div><button class="secondary" onclick="location.reload()">Refresh status</button></header><section><h2>Device health</h2><div class="health"><div class="health-card"><span>GPS</span><b class="{gps_class}">{gps_text}</b><small>Modem {html.escape(str(status.get('modem') or 'not detected'))}</small></div><div class="health-card"><span>Upload</span><b class="{upload_class}">{upload_text}</b><small>Last upload {html.escape(elapsed(status.get('last_upload')))}</small></div><div class="health-card"><span>Satellites</span><b class="{'good' if satellites is not None and satellites >= 4 else 'warn'}">{html.escape(satellites_text)}</b><small>GPS satellites in use</small></div><div class="health-card"><span>Offline queue</span><b>{status.get('queue_size', 0)}</b><small>stored positions</small></div></div>{error_html}</section><section><div class="top"><div><h2>Modem</h2><p>{html.escape(modem_details)}</p></div></div><div class="modem-grid"><div><span>Network</span><b>{html.escape(modem_name)}</b></div><div><span>Registration</span><b>{html.escape(registration)}</b></div><div><span>Technology</span><b>{html.escape(technology)}</b></div><div><span>Signal quality</span><b class="{'good' if signal is not None and signal >= 50 else 'warn'}">{html.escape(signal_text)}</b></div></div></section><section><h2>Viewer privacy</h2><p>Public location sharing: {sharing_text}</p>{sharing_form}<p>Only the viewer map is affected. GPS uploads and the private dashboard continue working.</p></section><details><summary><h2>Configuration</h2><small>{html.escape(config['api_url'])} · {html.escape(str(config.get('modem_id', 'auto')))} · {float(config.get('interval_seconds', 2)):g}s</small></summary><div><form method="post" action="/save"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" value="{html.escape(config['api_url'])}" required><label>Device ID</label><input name="device_id" value="{html.escape(config['device_id'])}" required><label>New device key (leave empty to keep current)</label><div class="key-row"><input id="device-key" name="device_key" type="password"><button class="secondary" id="toggle-key" type="button">Show</button></div><label>Update interval in seconds (0.5–10)</label><input name="interval_seconds" type="number" min="0.5" max="10" step="0.5" value="{float(config.get('interval_seconds',2)):g}"><label>Modem ID (`auto` recommended)</label><input name="modem_id" value="{html.escape(str(config.get('modem_id','auto')))}"><button>Save configuration</button></form></div></details><section><div class="top"><div><h2>System</h2><p>Agent version <b>{html.escape(current_version())}</b> · running for {html.escape(elapsed(status.get('started_at')))}</p></div><form method="post" action="/check-update"><input type="hidden" name="csrf" value="{self.csrf}"><button class="secondary">Check for updates</button></form></div><div class="system-grid">{system_cards}</div>{update_text}</section><script>const toggle=document.getElementById('toggle-key');if(toggle)toggle.onclick=()=>{{const key=document.getElementById('device-key');key.type=key.type==='password'?'text':'password';toggle.textContent=key.type==='password'?'Show':'Hide'}}</script>{auto_refresh}</main></body></html>'''
+        return f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Stream GPS Device</title><style>body{{background:#0b1120;color:#e5edf7;font:16px system-ui;margin:0;padding:24px}}main{{margin:auto;max-width:860px}}section,details{{background:#121b2b;border:1px solid #28364b;border-radius:14px;margin:14px 0;padding:18px}}h1,h2,p{{margin-top:0}}h1{{font-size:1.55rem;margin-bottom:4px}}h2{{font-size:1.05rem;margin-bottom:8px}}p,small{{color:#aab9cc}}button{{background:#1f6feb;border:0;border-radius:8px;color:white;cursor:pointer;font:inherit;font-weight:700;padding:9px 13px}}button.secondary{{background:#28364b}}input{{background:#0f1726;border:1px solid #44536a;border-radius:8px;box-sizing:border-box;color:white;margin:5px 0 14px;padding:10px;width:100%}}.top{{align-items:center;display:flex;gap:16px;justify-content:space-between}}.top p{{margin:0}}.health{{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-top:16px}}.modem-grid,.system-grid{{display:grid;gap:10px;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:16px}}.health-card,.metric,.modem-grid div{{background:#0f1726;border:1px solid #28364b;border-radius:10px;padding:12px}}.health-card span,.metric span,.modem-grid span{{color:#93a5bd;display:block;font-size:.75rem;font-weight:700;text-transform:uppercase}}.health-card b,.metric b,.modem-grid b{{display:block;font-size:1rem;margin:6px 0 3px;overflow-wrap:anywhere}}.health-card small,.metric small{{font-size:.76rem}}.good{{color:#35d39a}}.warn{{color:#fbbf24}}.bad{{color:#f97066}}.status-error{{background:#3b2028;border:1px solid #71333d;border-radius:9px;color:#ffd1cc;margin:14px 0 0;padding:10px 12px}}details{{padding:0}}summary{{align-items:center;cursor:pointer;display:flex;justify-content:space-between;list-style:none;padding:18px}}summary::-webkit-details-marker{{display:none}}summary small{{margin-left:auto;margin-right:12px}}details>div{{border-top:1px solid #28364b;padding:18px}}.key-row{{display:flex;gap:8px}}.key-row input{{margin-bottom:14px}}.key-row button{{height:42px;margin-top:5px;white-space:nowrap}}code{{overflow-wrap:anywhere}}@media(max-width:650px){{body{{padding:14px}}.top{{align-items:flex-start;flex-direction:column}}.health,.modem-grid,.system-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}</style></head><body><main><header class="top"><div><h1>Stream GPS Device</h1><p>Live health, modem and system status.</p></div><button class="secondary" onclick="location.reload()">Refresh status</button></header><section><h2>Device health</h2><div class="health"><div class="health-card"><span>GPS</span><b class="{gps_class}">{gps_text}</b><small>Modem {html.escape(str(status.get('modem') or 'not detected'))}</small></div><div class="health-card"><span>Upload</span><b class="{upload_class}">{upload_text}</b><small>Last upload {html.escape(elapsed(status.get('last_upload')))}</small></div><div class="health-card"><span>Satellites</span><b class="{'good' if satellites is not None and satellites >= 4 else 'warn'}">{html.escape(satellites_text)}</b><small>GPS satellites in use</small></div><div class="health-card"><span>Incline (beta)</span><b>{html.escape(incline_text)}</b><small>adaptive 50–120 m profile</small></div><div class="health-card"><span>Offline queue</span><b>{status.get('queue_size', 0)}</b><small>stored positions</small></div></div>{error_html}</section><section><div class="top"><div><h2>Modem</h2><p>{html.escape(modem_details)}</p></div></div><div class="modem-grid"><div><span>Network</span><b>{html.escape(modem_name)}</b></div><div><span>Registration</span><b>{html.escape(registration)}</b></div><div><span>Technology</span><b>{html.escape(technology)}</b></div><div><span>Signal quality</span><b class="{'good' if signal is not None and signal >= 50 else 'warn'}">{html.escape(signal_text)}</b></div></div></section><section><h2>Viewer privacy</h2><p>Public location sharing: {sharing_text}</p>{sharing_form}<p>Only the viewer map is affected. GPS uploads and the private dashboard continue working.</p></section><details><summary><h2>Configuration</h2><small>{html.escape(config['api_url'])} · {html.escape(str(config.get('modem_id', 'auto')))} · {float(config.get('interval_seconds', 2)):g}s</small></summary><div><form method="post" action="/save"><input type="hidden" name="csrf" value="{self.csrf}"><label>Platform URL</label><input name="api_url" value="{html.escape(config['api_url'])}" required><label>Device ID</label><input name="device_id" value="{html.escape(config['device_id'])}" required><label>New device key (leave empty to keep current)</label><div class="key-row"><input id="device-key" name="device_key" type="password"><button class="secondary" id="toggle-key" type="button">Show</button></div><label>Update interval in seconds (0.5–10)</label><input name="interval_seconds" type="number" min="0.5" max="10" step="0.5" value="{float(config.get('interval_seconds',2)):g}"><label>Modem ID (`auto` recommended)</label><input name="modem_id" value="{html.escape(str(config.get('modem_id','auto')))}"><button>Save configuration</button></form></div></details><section><div class="top"><div><h2>System</h2><p>Agent version <b>{html.escape(current_version())}</b> · running for {html.escape(elapsed(status.get('started_at')))}</p></div><form method="post" action="/check-update"><input type="hidden" name="csrf" value="{self.csrf}"><button class="secondary">Check for updates</button></form></div><div class="system-grid">{system_cards}</div>{update_text}</section><script>const toggle=document.getElementById('toggle-key');if(toggle)toggle.onclick=()=>{{const key=document.getElementById('device-key');key.type=key.type==='password'?'text':'password';toggle.textContent=key.type==='password'?'Show':'Hide'}}</script>{auto_refresh}</main></body></html>'''
     def do_GET(self):
         if not self.require_auth(): return
         if self.path == '/api/status':
