@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+__pycache__/
+/package-lock.json
+
+# Build output
+dist/
+coverage/
+backups/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.continue/
+.DS_Store
+Thumbs.db

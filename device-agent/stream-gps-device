@@ -1,0 +1,10 @@
+#!/bin/sh
+case "${1:-status}" in
+  status) systemctl --no-pager status stream-gps-device ;;
+  test) /opt/stream-gps-device/stream_gps_agent.py test ;;
+  logs) journalctl -u stream-gps-device -n 200 --no-pager ;;
+  follow) journalctl -u stream-gps-device -f ;;
+  config) /opt/stream-gps-device/stream_gps_agent.py config ;;
+  restart) systemctl restart stream-gps-device ;;
+  *) echo "Usage: stream-gps-device {status|test|logs|follow|config|restart}"; exit 2 ;;
+esac
