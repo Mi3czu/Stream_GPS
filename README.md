@@ -65,7 +65,7 @@ Bluetooth support is opt-in: devices without Bluetooth hardware continue to run 
 
 ### Device-first setup
 
-The standalone agent runs independently of BelaUI and is managed from a local web panel. It provides GNSS diagnostics, offline delivery when connectivity drops, secure updates and optional Bluetooth setup.
+The standalone agent runs independently of vendor control panels and is managed from a local web panel. It provides GNSS diagnostics, offline delivery when connectivity drops, secure updates and optional Bluetooth setup.
 
 ## Install on a device
 
@@ -75,7 +75,7 @@ The device needs a compatible GNSS modem, `systemd`, Internet access to your Str
 curl -fsSL https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/installer/install-device.sh -o /tmp/install-stream-gps-device.sh && sudo sh /tmp/install-stream-gps-device.sh
 ```
 
-For the full installation and modem preparation guide, see [BELABOX / standalone installation](docs/belabox-standalone-installation.md). Bluetooth setup is optional and described in [Bluetooth sensors](docs/bluetooth-sensors.md).
+For the full installation and modem preparation guide, see [standalone installation guide](docs/standalone-installation.md). Bluetooth setup is optional and described in [Bluetooth sensors](docs/bluetooth-sensors.md).
 
 ## Security
 
