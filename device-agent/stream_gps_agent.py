@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Standalone Stream GPS agent. It does not import or modify BelaUI."""
 
-import argparse, asyncio, base64, hashlib, hmac, html, json, math, os, re, secrets, select, shutil, statistics, subprocess, tempfile, threading, time, urllib.error, urllib.request, uuid
+import argparse, asyncio, base64, hashlib, hmac, html, json, math, os, re, secrets, shutil, statistics, subprocess, tempfile, threading, time, urllib.error, urllib.request, uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,7 +16,7 @@ XTRA_REFRESH_SECONDS = 72 * 60 * 60
 XTRA_RETRY_SECONDS = 30
 UPDATE_SUCCESS_NOTICE_SECONDS = 10 * 60
 STATUS = {'started_at': time.time(), 'modem': None, 'modem_info': {}, 'gps_fix': False, 'last_position': None, 'last_upload': None, 'last_error': None, 'queue_size': 0,
-          'gnss': {'assisted_mode': 'Not checked', 'assistance': 'Not checked', 'source': 'ModemManager', 'source_rate_hz': None, 'last_fresh_fix': None},
+          'gnss': {'assisted_mode': 'Not checked', 'assistance': 'Not checked', 'source_rate_hz': None, 'last_fresh_fix': None},
           'ble': {'available': None, 'state': 'Not configured', 'heart_rate': None, 'cadence': None, 'power_watts': None, 'last_reading': None, 'devices': []}}
 LOCK = threading.Lock()
 DEFAULT_UPDATE_BASE = 'https://raw.githubusercontent.com/Mi3czu/Stream_GPS/main/device-agent'
@@ -39,9 +39,6 @@ BLE_CSC_MEASUREMENT_UUID = '00002a5b-0000-1000-8000-00805f9b34fb'
 BLE_POWER_SERVICE_UUID = '00001818-0000-1000-8000-00805f9b34fb'
 BLE_POWER_MEASUREMENT_UUID = '00002a63-0000-1000-8000-00805f9b34fb'
 BLE_SCAN_SECONDS = 20
-DIRECT_NMEA_READ_SECONDS = 1.2
-DIRECT_NMEA_BUFFERS = {}
-DIRECT_NMEA_MODEM_CACHE = {}
 BLE_STACK_RESET_AFTER_FAILURES = 6
 BLE_STACK_RESET_COOLDOWN_SECONDS = 120
 BLE_SERVICE_TYPES = {
@@ -510,88 +507,10 @@ def parse_mmcli(text):
         if value is not None: position[target] = int(value) if target == 'satellites' else value
     return position
 
-def allowed_nmea_port(path):
-    """Only inspect serial GNSS ports; never accept an arbitrary local file."""
-    value = str(path)
-    return bool(re.fullmatch(r'/dev/(?:ttyUSB|ttyACM)\d+|/dev/wwan\d+gnss\d+', value))
-
-def direct_nmea_ports(config):
-    configured_port = str(config.get('nmea_port', 'auto')).strip()
-    if configured_port and configured_port.lower() != 'auto':
-        return [configured_port] if allowed_nmea_port(configured_port) and Path(configured_port).exists() else []
-    candidates = [*sorted(Path('/dev').glob('ttyUSB*')), *sorted(Path('/dev').glob('ttyACM*')), *sorted(Path('/dev').glob('wwan*gnss*'))]
-    return [str(path) for path in candidates if allowed_nmea_port(path)]
-
-def modem_needs_direct_nmea(modem):
-    """Direct NMEA is an opt-in compatibility path for the T99/DW5930e only.
-
-    Other modems continue to use ModemManager exclusively.  In particular, a
-    temporary loss of satellite visibility must never make the agent probe
-    serial ports on an unrelated modem.
-    """
-    cached = DIRECT_NMEA_MODEM_CACHE.get(str(modem))
-    if cached is not None: return cached
-    info = modem_info(modem)
-    identity = ' '.join(str(info.get(key) or '') for key in ('manufacturer', 'model', 'revision'))
-    supported = bool(re.search(r'\b(?:T99W175|DW5930E)\b', identity, re.I))
-    DIRECT_NMEA_MODEM_CACHE[str(modem)] = supported
-    return supported
-
-def read_direct_nmea(config, modem):
-    """Read a standard NMEA stream exposed by the current modem, without writing to it.
-
-    Some modems (including selected T99W175 USB profiles) expose GNSS as a
-    serial NMEA interface instead of making it available through
-    ModemManager's location API.  This is a read-only fallback for that one
-    modem; it does not alter USB composition, drivers, or the data connection.
-    """
-    for port in direct_nmea_ports(config):
-        descriptor = None
-        try:
-            descriptor = os.open(port, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
-            try:
-                import termios
-                attributes = termios.tcgetattr(descriptor)
-                attributes[0] = 0; attributes[1] = 0; attributes[3] = 0
-                attributes[2] |= termios.CLOCAL | termios.CREAD
-                termios.tcsetattr(descriptor, termios.TCSANOW, attributes)
-            except (ImportError, OSError, AttributeError):
-                pass
-            chunks = [DIRECT_NMEA_BUFFERS.get(port, '')]
-            deadline = time.monotonic() + DIRECT_NMEA_READ_SECONDS
-            while time.monotonic() < deadline:
-                ready, _, _ = select.select([descriptor], [], [], max(0, deadline - time.monotonic()))
-                if not ready: break
-                data = os.read(descriptor, 8192).decode('ascii', errors='ignore')
-                if not data: break
-                chunks.append(data)
-                if '$' in data and ('RMC' in data or 'GGA' in data): break
-            stream = ''.join(chunks)[-16384:]
-            DIRECT_NMEA_BUFFERS[port] = stream[-4096:]
-            position = parse_mmcli(stream)
-            if position is not None:
-                position['_position_source'] = 'Direct NMEA ' + port
-                return position
-        except (OSError, ValueError):
-            continue
-        finally:
-            if descriptor is not None:
-                try: os.close(descriptor)
-                except OSError: pass
-    return None
-
-def read_position(modem, config=None):
+def read_position(modem):
     result = run('mmcli', '-K', '-m', modem, '--location-get')
-    mm_error = result.stderr.strip() or 'mmcli location request failed'
-    if not result.returncode:
-        position = parse_mmcli(result.stdout)
-        if position is not None:
-            position['_position_source'] = 'ModemManager'
-            return position
-    position = read_direct_nmea(config or {}, modem) if modem_needs_direct_nmea(modem) else None
-    if position is not None: return position
-    if result.returncode: raise RuntimeError(mm_error)
-    return None
+    if result.returncode: raise RuntimeError(result.stderr.strip() or 'mmcli location request failed')
+    return parse_mmcli(result.stdout)
 
 def nmea_seconds(value):
     match = re.fullmatch(r'(\d{2})(\d{2})(\d{2}(?:\.\d+)?)', str(value or ''))
@@ -873,7 +792,7 @@ def tracking_loop():
                 info = modem_info(modem)
                 with LOCK: STATUS['modem_info'] = info
                 last_modem_poll = time.time()
-            position = read_position(modem, config)
+            position = read_position(modem)
             if position is None:
                 with LOCK:
                     heart_rate = STATUS['ble'].get('heart_rate'); cadence = STATUS['ble'].get('cadence'); power_watts = STATUS['ble'].get('power_watts'); last_position = STATUS.get('last_position')
@@ -892,7 +811,6 @@ def tracking_loop():
                 with LOCK: STATUS['gps_fix'] = False
                 time.sleep(max(2, int(config.get('interval_seconds', 2)))); continue
             position = apply_position_filter(position, config)
-            with LOCK: STATUS['gnss']['source'] = position.get('_position_source', 'ModemManager')
             position['trip_min_speed_kmh'] = trip_movement_settings(config)['trip_min_speed_kmh']
             with LOCK: heart_rate = STATUS['ble'].get('heart_rate'); cadence = STATUS['ble'].get('cadence'); power_watts = STATUS['ble'].get('power_watts')
             if heart_rate is not None: position['heart_rate'] = heart_rate
@@ -962,8 +880,7 @@ class Handler(BaseHTTPRequestHandler):
         source_rate = gnss.get('source_rate_hz')
         source_rate_text = f'{source_rate:g} Hz' if source_rate is not None else 'Measuring'
         fresh_fix = gnss.get('last_fresh_fix')
-        source_name = str(gnss.get('source') or 'ModemManager')
-        source_hint = f'{source_name} · last new NMEA fix {elapsed(fresh_fix)}' if fresh_fix else f'{source_name} · waiting for a new NMEA fix'
+        source_hint = f'last new NMEA fix {elapsed(fresh_fix)}' if fresh_fix else 'waiting for a new NMEA fix'
         assisted_hint = f'{gnss.get("assisted_mode", "Not checked")} · {gnss.get("assistance", "Not checked")}'
         connected = bool(status.get('last_upload') and time.time() - status['last_upload'] < 90)
         upload_text, upload_class = ('Connected', 'good') if connected else ('Waiting for upload', 'warn')
@@ -1193,7 +1110,7 @@ def diagnostic():
     position = None
     if modem is not None:
         enable_gps(modem)
-        try: position = read_position(modem, config)
+        try: position = read_position(modem)
         except Exception: pass
     checks.append(('GPS fix', position is not None))
     api_ok = False
