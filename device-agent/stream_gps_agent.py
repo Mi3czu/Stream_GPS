@@ -946,7 +946,8 @@ class Handler(BaseHTTPRequestHandler):
         source_rate = gnss.get('source_rate_hz')
         source_rate_text = f'{source_rate:g} Hz' if source_rate is not None else 'Measuring'
         fresh_fix = gnss.get('last_fresh_fix')
-        source_hint = f'last new NMEA fix {elapsed(fresh_fix)}' if fresh_fix else 'waiting for a new NMEA fix'
+        source_name = str(gnss.get('source') or 'ModemManager')
+        source_hint = f'{source_name} · last new NMEA fix {elapsed(fresh_fix)}' if fresh_fix else f'{source_name} · waiting for a new NMEA fix'
         assisted_hint = f'{gnss.get("assisted_mode", "Not checked")} · {gnss.get("assistance", "Not checked")}'
         connected = bool(status.get('last_upload') and time.time() - status['last_upload'] < 90)
         upload_text, upload_class = ('Connected', 'good') if connected else ('Waiting for upload', 'warn')
