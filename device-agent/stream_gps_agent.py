@@ -41,6 +41,7 @@ BLE_POWER_MEASUREMENT_UUID = '00002a63-0000-1000-8000-00805f9b34fb'
 BLE_SCAN_SECONDS = 20
 DIRECT_NMEA_READ_SECONDS = 1.2
 DIRECT_NMEA_BUFFERS = {}
+DIRECT_NMEA_MODEM_CACHE = {}
 BLE_STACK_RESET_AFTER_FAILURES = 6
 BLE_STACK_RESET_COOLDOWN_SECONDS = 120
 BLE_SERVICE_TYPES = {
@@ -521,7 +522,22 @@ def direct_nmea_ports(config):
     candidates = [*sorted(Path('/dev').glob('ttyUSB*')), *sorted(Path('/dev').glob('ttyACM*')), *sorted(Path('/dev').glob('wwan*gnss*'))]
     return [str(path) for path in candidates if allowed_nmea_port(path)]
 
-def read_direct_nmea(config):
+def modem_needs_direct_nmea(modem):
+    """Direct NMEA is an opt-in compatibility path for the T99/DW5930e only.
+
+    Other modems continue to use ModemManager exclusively.  In particular, a
+    temporary loss of satellite visibility must never make the agent probe
+    serial ports on an unrelated modem.
+    """
+    cached = DIRECT_NMEA_MODEM_CACHE.get(str(modem))
+    if cached is not None: return cached
+    info = modem_info(modem)
+    identity = ' '.join(str(info.get(key) or '') for key in ('manufacturer', 'model', 'revision'))
+    supported = bool(re.search(r'\b(?:T99W175|DW5930E)\b', identity, re.I))
+    DIRECT_NMEA_MODEM_CACHE[str(modem)] = supported
+    return supported
+
+def read_direct_nmea(config, modem):
     """Read a standard NMEA stream exposed by the current modem, without writing to it.
 
     Some modems (including selected T99W175 USB profiles) expose GNSS as a
@@ -572,7 +588,7 @@ def read_position(modem, config=None):
         if position is not None:
             position['_position_source'] = 'ModemManager'
             return position
-    position = read_direct_nmea(config or {})
+    position = read_direct_nmea(config or {}, modem) if modem_needs_direct_nmea(modem) else None
     if position is not None: return position
     if result.returncode: raise RuntimeError(mm_error)
     return None
